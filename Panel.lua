@@ -32,7 +32,7 @@ local function BuildRow(row)
     row.zone:SetJustifyH("LEFT")
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
     row:SetScript("OnClick", function(self)
-        local target = self.full and Ambiguate(self.full, "none")
+        local target = self.full and CF.WhisperName(self.full)
         if not target then return end
         if ChatFrameUtil and ChatFrameUtil.OpenChat then ChatFrameUtil.OpenChat("/w " .. target .. " ")
         elseif ChatFrame_OpenChat then ChatFrame_OpenChat("/w " .. target .. " ") end

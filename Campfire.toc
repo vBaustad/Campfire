@@ -3,7 +3,7 @@
 ## Category: YippYapp
 ## Notes: Find your guildies out in the world: see which guildies are nearby, how many yards away and in which direction, and whisper them in one click. Part of YippYapp - addons for WoW: Forever that work even better together.
 ## Author: vebjorn
-## Version: 0.1.0-beta1
+## Version: 0.1.0-beta2
 ## IconTexture: Interface\AddOns\Campfire\Media\icon
 ## SavedVariables: CampfireDB
 ## AddonCompartmentFunc: Campfire_OnAddonCompartmentClick

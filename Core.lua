@@ -26,6 +26,16 @@ CF.peers = {}           -- ["Name-Realm"] = { map, x, y, seen } or { seen, hidde
 -- ---------------------------------------------------------------------------
 local last = { at = -math.huge }
 
+--- The name to whisper: on our own realm the client wants "Name", not "Name-Realm".
+--- Stored names and comparisons keep the full form. LIB.Send normalises its own targets.
+function CF.WhisperName(full)
+    if LIB.WhisperName then return LIB.WhisperName(full) end
+    if not full then return nil end
+    local name, realm = full:match("^(.-)%-(.+)$")
+    if not name then return full end
+    return realm == LIB.Realm() and name or full
+end
+
 --- To the guild, or whispered to one guildie when target is given.
 local function Send(text, target)
     LIB.Send(PREFIX, text, target and "WHISPER" or "GUILD", target, "BULK")
@@ -41,8 +51,8 @@ end
 --- reason: "tick" (regular check, only sends when moved or due) or anything else (sends unless we just did).
 function CF.SendPosition(reason)
     if not (CF.db and CF.db.share and IsInGuild()) then return end
-    -- LibForever holds messages during chat lockdown; a held position would be stale when it goes out.
-    if LIB.InChatLockdown() then return end
+    -- Chat lockdown does not touch addon messages (SendAddonMessage has no lockdown clause), so
+    -- positions keep flowing through it.
     local now = GetTime()
     local text, map, x, y = PositionText()
     local elapsed = now - last.at
@@ -67,7 +77,7 @@ end
 
 --- Answer one guildie's "where is everyone": whispered, so a login doesn't set off a guild-wide burst.
 local function ReplyPosition(target)
-    if not (CF.db and CF.db.share) or LIB.InChatLockdown() then return end
+    if not (CF.db and CF.db.share) then return end
     Send((PositionText()), target)
 end
 
@@ -239,6 +249,10 @@ SlashCmdList.CAMPFIRE = function(msg)
         print(("%s debug: map %s (%s) at %s, %s; size known: %s; lockdown: %s"):format(TAG, tostring(map),
             LIB.MapName(map), x and ("%.4f"):format(x) or "-", y and ("%.4f"):format(y) or "-",
             tostring(map and LIB.Maps and LIB.Maps[map] ~= nil), tostring(LIB.InChatLockdown())))
+        if LIB.CommStats then
+            local sent, received = LIB.CommStats(PREFIX)
+            print(("  messages: %s sent, %s received"):format(tostring(sent), tostring(received)))
+        end
         for full, p in pairs(CF.peers) do
             print(("  %s: %s, seen %ds ago"):format(full, p.hidden and "hidden" or
                 ("map %d %.4f %.4f"):format(p.map, p.x, p.y), GetTime() - p.seen))

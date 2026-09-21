@@ -29,7 +29,7 @@ shares their own position with the guild, and that's how the list is built.
   the welcome page, or type `/campfire share`. Guildies stop seeing you straight away. You still see guildies
   who share.
 - **Light on traffic.** Your position goes out when you've moved a bit, at most every 15 seconds, and about
-  every 90 seconds when you stand still. Nothing is sent while the game locks down chat.
+  every 90 seconds when you stand still.
 
 ## Getting started
 
