@@ -1,9 +1,9 @@
 ## Interface: 16001
 ## Title: Campfire
 ## Category: YippYapp
-## Notes: Find your guildies out in the world: see which guildies are nearby, how many yards away and in which direction, and whisper them in one click. Part of YippYapp - addons for WoW: Forever that work even better together.
+## Notes: Find other players out in the world: see which guildies and Campfire players on your faction are nearby, where they are and how far away, and whisper them in one click. Part of YippYapp - addons for WoW: Forever that work even better together.
 ## Author: vebjorn
-## Version: 0.1.0-beta2
+## Version: 0.1.0-beta3
 ## IconTexture: Interface\AddOns\Campfire\Media\icon
 ## SavedVariables: CampfireDB
 ## AddonCompartmentFunc: Campfire_OnAddonCompartmentClick
@@ -28,6 +28,7 @@ Libs\LibForever-1.0\Welcome.lua
 Libs\LibForever-1.0\Settings.lua
 
 Core.lua
+Open.lua
 Options.lua
 Panel.lua
 Intro.lua

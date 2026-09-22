@@ -6,30 +6,67 @@ local W, H = 340, 380
 local ROW_H, ROWS = 34, 7
 local win
 
+--- What the empty list says, depending on the settings: who can show up here, and how to see more.
+function CF.EmptyText(elsewhere)
+    local open = CF.OpenActive and CF.OpenActive()
+    local inGuild = IsInGuild()
+    local tick = "Tick \"Also share with other Campfire players on my faction\" in the settings"
+    if not inGuild and not open then
+        if CF.db.hidden then
+            return "Your position is hidden and you're not in a guild, so Campfire has no one to show.\n\n"
+                .. "Untick \"Hide my position\" below to see Campfire players on your faction."
+        end
+        return "You're not in a guild and sharing with other Campfire players is off, so Campfire has no "
+            .. "one to show.\n\n" .. tick .. " to see players on your faction."
+    end
+    local where = CF.db.zoneOnly and "in your zone" or "online"
+    local head = open and ("No one with Campfire " .. where .. " right now.")
+        or ("No guildies with Campfire " .. where .. " right now.")
+    local more
+    if CF.db.zoneOnly and elsewhere > 0 then
+        more = elsewhere .. " more elsewhere. Tick \"Show all zones\" below to list them too."
+    elseif open then
+        more = "Guildies and other Campfire players on your faction show up here with where they are and how far away."
+    elseif CF.db.hidden then
+        more = "While your position is hidden you only see guildies. Untick \"Hide my position\" below to see "
+            .. "Campfire players on your faction too."
+    else
+        more = tick .. " to see more players."
+    end
+    return head .. "\n\n" .. more
+end
+
 local function Refresh()
     if not (win and win:IsShown()) then return end
-    local list = CF.Nearby()
+    local list, elsewhere = CF.Nearby()
     win.list:SetData(list)
-    if not IsInGuild() then
-        win.empty:SetText("You're not in a guild.")
-    elseif #list == 0 then
-        win.empty:SetText("No guildies with Campfire online yet.\n\nWhen guildies run Campfire too, they show up here with how far away they are.")
-    else
-        win.empty:SetText("")
-    end
-    win.share:SetChecked(CF.db.share)
+    win.empty:SetText(#list == 0 and CF.EmptyText(elsewhere) or "")
+    win.hide:SetChecked(CF.db.hidden)
+    win.allZones:SetChecked(not CF.db.zoneOnly)
     win.status:SetText(CF.StatusText())
 end
 
 local function BuildRow(row)
+    -- Two lines on each side:
+    --   Swim Shady                 Redridge Mountains
+    --   20 Priest                         1300 yd SW
     row.name = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
     row.name:SetPoint("TOPLEFT", 6, -3)
-    row.dist = row:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
-    row.dist:SetPoint("TOPRIGHT", -6, -3)
-    row.zone = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    row.zone:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -2)
-    row.zone:SetPoint("RIGHT", -6, 0)
-    row.zone:SetJustifyH("LEFT")
+    row.where = row:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+    row.where:SetPoint("TOPRIGHT", -6, -3)
+    -- Meets the name at most; a long place name ends in "...".
+    row.where:SetPoint("LEFT", row.name, "RIGHT", 8, 0)
+    row.where:SetJustifyH("RIGHT")
+    row.where:SetWordWrap(false)
+    row.who = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    row.who:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -3)
+    row.who:SetJustifyH("LEFT")
+    row.who:SetWordWrap(false)
+    row.how = row:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    row.how:SetPoint("TOPRIGHT", row.where, "BOTTOMRIGHT", 0, -3)
+    row.how:SetPoint("LEFT", row.who, "RIGHT", 8, 0)
+    row.how:SetJustifyH("RIGHT")
+    row.how:SetWordWrap(false)
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
     row:SetScript("OnClick", function(self)
         local target = self.full and CF.WhisperName(self.full)
@@ -40,6 +77,7 @@ local function BuildRow(row)
     row:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(LIB.ShortName(self.full))
+        if self.open then GameTooltip:AddLine("Not in your guild", 0.6, 0.6, 0.6) end
         GameTooltip:AddLine("Click to whisper", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
@@ -47,20 +85,12 @@ local function BuildRow(row)
 end
 
 local function FillRow(row, e)
-    local r = LIB.roster[e.full]
-    row.full = e.full
-    row.name:SetText(LIB.ColorName(e.full, r and r.class))
-    local p = e.peer
-    if p.hidden then
-        row.dist:SetText("|cff999999-|r")
-        row.zone:SetText("Indoors or in an instance")
-    elseif e.yards then
-        row.dist:SetText(("%d yd%s"):format(math.floor(e.yards + 0.5), e.dir and (" |cffaaaaaa" .. e.dir .. "|r") or ""))
-        row.zone:SetText(LIB.MapName(p.map))
-    else
-        row.dist:SetText("|cff999999far|r")
-        row.zone:SetText(LIB.MapName(p.map))
-    end
+    row.full, row.open = e.full, e.peer.open
+    local name, where, who, how = CF.RowText(e)
+    row.name:SetText(name)
+    row.where:SetText(where)
+    row.who:SetText(who)
+    row.how:SetText(how)
 end
 
 -- A fixed pool of rows inside a FauxScrollFrame, as in Guildhall's ScrollList.
@@ -132,16 +162,21 @@ local function Build()
     win.empty:SetPoint("TOPLEFT", 20, -40)
     win.empty:SetPoint("RIGHT", -20, 0)
 
-    win.share = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
-    win.share:SetSize(24, 24)
-    win.share:SetPoint("BOTTOMLEFT", 16, 46)
-    local label = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    label:SetPoint("LEFT", win.share, "RIGHT", 2, 0)
-    label:SetText("Share my position with my guild")
-    win.share:SetScript("OnClick", function(self)
-        CF.SetShare(self:GetChecked() and true or false)
-        Refresh()
-    end)
+    local function Toggle(x, text, onClick)
+        local cb = CreateFrame("CheckButton", nil, win, "UICheckButtonTemplate")
+        cb:SetSize(24, 24)
+        cb:SetPoint("BOTTOMLEFT", x, 46)
+        local label = win:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+        label:SetPoint("LEFT", cb, "RIGHT", 2, 0)
+        label:SetText(text)
+        cb:SetScript("OnClick", function(self)
+            onClick(self:GetChecked() and true or false)
+            Refresh()
+        end)
+        return cb
+    end
+    win.hide = Toggle(16, "Hide my position", CF.SetHidden)
+    win.allZones = Toggle(180, "Show all zones", CF.SetShowAllZones)
 
     local close = CreateFrame("Button", nil, win, "UIPanelButtonTemplate")
     close:SetSize(90, 22)

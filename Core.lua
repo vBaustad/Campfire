@@ -1,4 +1,4 @@
--- Campfire - find your guildies out in the world.
+-- Campfire - find guildies and other Campfire players on your faction out in the world.
 -- Each player running Campfire shares their own map position with the guild over the addon channel
 -- (the client only lets an addon read its own position and its party's), and everyone works out
 -- the distance in yards from the map sizes in LibForever's Maps.lua.
@@ -15,11 +15,64 @@ local STALE = 240       -- forget a guildie after this many seconds without news
 local HEARTBEAT = 90    -- resend at least this often while standing still
 local MIN_GAP = 15      -- never send more often than this while moving
 local MOVE_YARDS = 40   -- ...and only once we've moved this far
+local RIGHT_HERE = 40   -- closer than this reads "right here"
 
-local defaults = { share = true }
+CF.PROTO = PROTO
+CF.STALE = STALE
 
-CF.peers = {}           -- ["Name-Realm"] = { map, x, y, seen } or { seen, hidden = true }
+-- hidden: share nothing at all (the one switch in the window).
+-- openShare: besides the guild, also share with Campfire players on our faction over a hidden
+--   channel (Open.lua). Custom channels are per faction, so the other faction never sees it.
+-- zoneOnly: list only players in our zone (the window's "Show all zones" is its opposite).
+local defaults = { hidden = false, zoneOnly = true, openShare = true }
+local migrations = {
+    -- 2: openShare became opt-out (it was off by default in the first test builds).
+    [2] = function(db) db.openShare = true end,
+    -- 3: "Share my position with my guild" became "Hide my position": whoever had turned
+    -- sharing off stays hidden.
+    [3] = function(db)
+        if db.share == false then db.hidden = true end
+        db.share = nil
+    end,
+}
+
+CF.peers = {}           -- ["Name-Realm"] = { map, x, y, seen, open, sub, level, class } or { seen, hidden = true }
 -- Messages: P = position, H = no position (indoors/instance), X = stopped sharing, Q = where is everyone?
+-- P;proto;map;x;y;subzone;level;class - the last three were added later, so older clients ignore them.
+
+function CF.Sharing()
+    return CF.db and not CF.db.hidden
+end
+
+-- ---------------------------------------------------------------------------
+-- Who we are, for the message
+-- ---------------------------------------------------------------------------
+--- Text that came from another player: no separators, no escape codes, and not too long.
+function CF.CleanText(s)
+    if type(s) ~= "string" then return nil end
+    s = s:gsub("[;|\r\n]", ""):sub(1, 40)
+    return s ~= "" and s or nil
+end
+
+--- Where we are within the zone: "Goldshire", "Fargodeep Mine"; nil in the open.
+function CF.MySubZone()
+    return CF.CleanText(GetSubZoneText()) or CF.CleanText(GetMinimapZoneText())
+end
+
+function CF.AboutMe()
+    local _, class = UnitClass("player")
+    return CF.MySubZone() or "", UnitLevel("player") or 0, class or ""
+end
+
+--- A received class token, only if it's a real one.
+function CF.ValidClass(class)
+    return class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[class] and class or nil
+end
+
+function CF.ValidLevel(level)
+    level = tonumber(level)
+    return level and level >= 1 and level <= 100 and math.floor(level) or nil
+end
 
 -- ---------------------------------------------------------------------------
 -- Sending our position
@@ -41,16 +94,17 @@ local function Send(text, target)
     LIB.Send(PREFIX, text, target and "WHISPER" or "GUILD", target, "BULK")
 end
 
---- Our position as a message: "P" with map and coordinates, or "H" when we have none.
+--- Our position as a message: "P" with map, coordinates and who/where we are, or "H" when we have none.
 local function PositionText()
     local map, x, y = LIB.MyPosition()
     if not map then return ("H;%d"):format(PROTO) end
-    return ("P;%d;%d;%.4f;%.4f"):format(PROTO, map, x, y), map, x, y
+    local sub, level, class = CF.AboutMe()
+    return ("P;%d;%d;%.4f;%.4f;%s;%d;%s"):format(PROTO, map, x, y, sub, level, class), map, x, y
 end
 
 --- reason: "tick" (regular check, only sends when moved or due) or anything else (sends unless we just did).
 function CF.SendPosition(reason)
-    if not (CF.db and CF.db.share and IsInGuild()) then return end
+    if not (CF.Sharing() and IsInGuild()) then return end
     -- Chat lockdown does not touch addon messages (SendAddonMessage has no lockdown clause), so
     -- positions keep flowing through it.
     local now = GetTime()
@@ -77,7 +131,7 @@ end
 
 --- Answer one guildie's "where is everyone": whispered, so a login doesn't set off a guild-wide burst.
 local function ReplyPosition(target)
-    if not (CF.db and CF.db.share) then return end
+    if not CF.Sharing() then return end
     Send((PositionText()), target)
 end
 
@@ -86,12 +140,13 @@ end
 -- ---------------------------------------------------------------------------
 local function OnMessage(_, text, dist, sender)
     -- LibForever only passes on guild messages and whispers from guildies.
-    local kind, proto, a, b, c = strsplit(";", text)
+    local kind, proto, a, b, c, sub, level, class = strsplit(";", text)
     if tonumber(proto) ~= PROTO then return end
     if kind == "P" then
         local map, x, y = tonumber(a), tonumber(b), tonumber(c)
         if not (map and x and y) then return end
-        CF.peers[sender] = { map = map, x = x, y = y, seen = GetTime() }
+        CF.peers[sender] = { map = map, x = x, y = y, seen = GetTime(),
+            sub = CF.CleanText(sub), level = CF.ValidLevel(level), class = CF.ValidClass(class) }
     elseif kind == "H" then
         CF.peers[sender] = { seen = GetTime(), hidden = true }
     elseif kind == "X" then
@@ -110,7 +165,7 @@ end
 -- ---------------------------------------------------------------------------
 -- Who is where
 -- ---------------------------------------------------------------------------
-local DIRS = { "east", "northeast", "north", "northwest", "west", "southwest", "south", "southeast" }
+local DIRS = { "E", "NE", "N", "NW", "W", "SW", "S", "SE" }
 
 --- Compass direction from us to them, only when we're on the same map.
 local function Direction(map, x, y, p)
@@ -123,17 +178,48 @@ local function Direction(map, x, y, p)
     return DIRS[i + 1]
 end
 
---- Guildies running Campfire, nearest first: { full, peer, yards, dir }.
+--- The zone a map belongs to: walks up from sub-zone, cave and floor maps to the zone map, so
+--- two players in the same zone compare equal even on different floors. Continents stay themselves.
+local zoneOf = {}
+function CF.ZoneOf(mapId)
+    if not mapId then return nil end
+    if zoneOf[mapId] ~= nil then return zoneOf[mapId] end
+    local ZONE = Enum and Enum.UIMapType and Enum.UIMapType.Zone or 3
+    local id, info = mapId, C_Map.GetMapInfo(mapId)
+    while info and info.mapType and info.mapType > ZONE and info.parentMapID and info.parentMapID ~= 0 do
+        id = info.parentMapID
+        info = C_Map.GetMapInfo(id)
+    end
+    local zone = (info and info.mapType == ZONE) and id or mapId
+    zoneOf[mapId] = zone
+    return zone
+end
+
+local function Expired(full, p, now)
+    if p.open then return now - p.seen > (CF.OPEN_STALE or STALE) end
+    return now - p.seen > STALE or (LIB.rosterReady and not LIB.IsOnline(full))
+end
+
+--- Players running Campfire, nearest first: { full, peer, yards, dir, sameZone }.
+--- With zoneOnly on, only players in our zone are listed; the second return counts the rest.
 function CF.Nearby()
     local map, x, y = LIB.MyPosition()
+    local myZone = CF.ZoneOf(map)
+    local zoneOnly = CF.db and CF.db.zoneOnly
     local now = GetTime()
-    local list = {}
+    local list, elsewhere = {}, 0
     for full, p in pairs(CF.peers) do
-        if now - p.seen > STALE or (LIB.rosterReady and not LIB.IsOnline(full)) then
+        if Expired(full, p, now) then
             CF.peers[full] = nil
         else
-            local yards = (map and not p.hidden) and LIB.Distance(map, x, y, p.map, p.x, p.y) or nil
-            list[#list + 1] = { full = full, peer = p, yards = yards, dir = yards and Direction(map, x, y, p) }
+            local same = not p.hidden and myZone ~= nil and CF.ZoneOf(p.map) == myZone
+            if zoneOnly and not same then
+                elsewhere = elsewhere + 1
+            else
+                local yards = (map and not p.hidden) and LIB.Distance(map, x, y, p.map, p.x, p.y) or nil
+                list[#list + 1] = { full = full, peer = p, yards = yards, sameZone = same,
+                    dir = yards and Direction(map, x, y, p) }
+            end
         end
     end
     table.sort(list, function(l, r)
@@ -141,66 +227,119 @@ function CF.Nearby()
         if l.yards or r.yards then return l.yards ~= nil end
         return l.full < r.full
     end)
-    return list
+    return list, elsewhere
 end
 
-local function Describe(e)
-    local r = LIB.roster[e.full]
-    local name = LIB.ColorName(e.full, r and r.class)
+--- A rough distance: close ones to 10 yards, then 50, then 100.
+local function Rough(yards)
+    local step = yards < 200 and 10 or yards < 1000 and 50 or 100
+    return math.floor(yards / step + 0.5) * step
+end
+
+--- The four parts of a row:
+---   name (class colour)          where (sub-zone, or zone)
+---   who ("20 Priest")            how ("1300 yd SW", "right here", "far away", "indoors")
+function CF.RowText(e)
     local p = e.peer
+    local r = LIB.roster[e.full]
+    local class = (r and r.class) or p.class
+    local level = (r and r.level) or p.level
+    -- Players outside the guild (open channel) are grey.
+    local name = p.open and ("|cff999999" .. LIB.ShortName(e.full) .. "|r") or LIB.ColorName(e.full, class)
+
+    local where
     if p.hidden then
-        return name .. " - |cff999999indoors or in an instance|r"
+        where = ""
+    elseif e.sameZone then
+        where = p.sub or LIB.MapName(p.map)
+    else
+        -- Another zone (only listed with "Show all zones"): the zone says more than the sub-zone.
+        where = LIB.MapName(CF.ZoneOf(p.map) or p.map)
     end
-    local zone = LIB.MapName(p.map)
-    if e.yards then
-        return ("%s - |cffffffff%d yd|r%s, %s"):format(name, math.floor(e.yards + 0.5),
-            e.dir and (" " .. e.dir) or "", zone)
+
+    local className = class and ((LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class)
+    if className then
+        className = p.open and className or ("|c" .. LIB.ClassColor(class) .. className .. "|r")
     end
-    return ("%s - %s |cff999999(too far to measure)|r"):format(name, zone)
+    local who = (level and tostring(level) or "") .. ((level and className) and " " or "") .. (className or "")
+
+    local how
+    if p.hidden then
+        how = "indoors"
+    elseif e.yards and e.yards < RIGHT_HERE then
+        how = "right here"
+    elseif e.yards then
+        how = Rough(e.yards) .. " yd" .. (e.dir and (" " .. e.dir) or "")
+    else
+        how = "far away"
+    end
+    return name, where, who, how
 end
 
 function CF.PrintList()
-    if not IsInGuild() then print(TAG .. ": you're not in a guild.") return end
     local list = CF.Nearby()
-    if #list == 0 then
-        print(TAG .. ": no guildies with Campfire online yet.")
-        return
+    print(TAG .. ": " .. CF.StatusText())
+    for _, e in ipairs(list) do
+        local name, where, who, how = CF.RowText(e)
+        print(("  %s %s - %s%s"):format(name, who, where ~= "" and (where .. ", ") or "", how))
     end
-    print(("%s: %d guildie%s with Campfire online:"):format(TAG, #list, #list == 1 and "" or "s"))
-    for _, e in ipairs(list) do print("  " .. Describe(e)) end
-    if not CF.db.share then print("  |cff999999You aren't sharing your own position (/campfire share).|r") end
 end
 
 -- ---------------------------------------------------------------------------
--- Launcher, compartment, slash
+-- Hiding, launcher, compartment, slash
 -- ---------------------------------------------------------------------------
 local function OnLauncherClick(button)
     if button == "RightButton" then CF.OpenOptions() else CF.TogglePanel() end
 end
 
-function CF.SetShare(on)
-    if CF.db.share == on then return end
-    CF.db.share = on
-    -- Turning it off tells guildies at once, so they drop us now instead of after STALE.
-    if on then CF.SendPosition("share") else Send(("X;%d"):format(PROTO)) end
+--- Hide our position from everyone, or share it again as set in the settings.
+function CF.SetHidden(hidden)
+    hidden = hidden and true or false
+    if CF.db.hidden == hidden then return end
+    CF.db.hidden = hidden
+    -- Hiding tells guildies at once, so they drop us now instead of after STALE.
+    if hidden then Send(("X;%d"):format(PROTO)) else CF.SendPosition("share") end
+    if CF.OpenHiddenChanged then CF.OpenHiddenChanged() end
+    LIB.Fire("CAMPFIRE_PEERS")
 end
 
+function CF.SetShowAllZones(all)
+    CF.db.zoneOnly = not all
+    LIB.Fire("CAMPFIRE_PEERS")
+end
+
+--- "2 in your zone (1 guildie), 3 more elsewhere." The guildie count only shows when the list also
+--- has players from outside the guild.
 local function StatusText()
-    local list = CF.Nearby()
-    local near = 0
-    for _, e in ipairs(list) do if e.yards and e.yards <= 1000 then near = near + 1 end end
-    if #list == 0 then return "No guildies with Campfire online." end
-    return ("%d online, %d within 1000 yards"):format(#list, near)
+    local list, elsewhere = CF.Nearby()
+    local guildies = 0
+    for _, e in ipairs(list) do if not e.peer.open then guildies = guildies + 1 end end
+    local text
+    if #list == 0 then
+        text = CF.db.zoneOnly and "No one in your zone" or "No one with Campfire online"
+    else
+        text = ("%d %s"):format(#list, CF.db.zoneOnly and "in your zone" or "with Campfire online")
+        if guildies < #list then
+            text = text .. (" (%d guildie%s)"):format(guildies, guildies == 1 and "" or "s")
+        end
+    end
+    if CF.db.zoneOnly and elsewhere > 0 then text = text .. (", %d more elsewhere"):format(elsewhere) end
+    return text .. "."
 end
 CF.StatusText = StatusText
+
+local function TooltipLines(add)
+    add(TAG)
+    add(StatusText(), 1, 1, 1)
+    if CF.db.hidden then add("Your position is hidden.", 1, 0.6, 0.2) end
+    add("Left-click: open Campfire", 0.8, 0.8, 0.8)
+    add("Right-click: settings", 0.8, 0.8, 0.8)
+end
 
 function Campfire_OnAddonCompartmentClick(_, button) OnLauncherClick(button) end
 function Campfire_OnAddonCompartmentEnter(_, menuButton)
     GameTooltip:SetOwner(menuButton, "ANCHOR_LEFT")
-    GameTooltip:AddLine(TAG)
-    GameTooltip:AddLine(StatusText(), 1, 1, 1)
-    GameTooltip:AddLine("Left-click: open Campfire", 0.8, 0.8, 0.8)
-    GameTooltip:AddLine("Right-click: settings", 0.8, 0.8, 0.8)
+    TooltipLines(function(...) GameTooltip:AddLine(...) end)
     GameTooltip:Show()
 end
 function Campfire_OnAddonCompartmentLeave() GameTooltip:Hide() end
@@ -222,12 +361,7 @@ local function RegisterMinimap()
         icon = "Interface\\AddOns\\Campfire\\Media\\minimap",
         label = "Campfire",
         OnClick = function(_, button) OnLauncherClick(button) end,
-        OnTooltipShow = function(tt)
-            tt:AddLine(TAG)
-            tt:AddLine(StatusText(), 1, 1, 1)
-            tt:AddLine("Left-click: open Campfire", 0.8, 0.8, 0.8)
-            tt:AddLine("Right-click: settings", 0.8, 0.8, 0.8)
-        end,
+        OnTooltipShow = function(tt) TooltipLines(function(...) tt:AddLine(...) end) end,
     }, CF.db)
 end
 
@@ -239,29 +373,34 @@ SlashCmdList.CAMPFIRE = function(msg)
         CF.TogglePanel()
     elseif cmd == "list" then
         CF.PrintList()
-    elseif cmd == "share" then
-        CF.SetShare(not CF.db.share)
-        print(TAG .. ": " .. (CF.db.share and "sharing your position with the guild." or "no longer sharing your position."))
+    elseif cmd == "hide" or cmd == "share" then
+        CF.SetHidden(not CF.db.hidden)
+        print(TAG .. ": " .. (CF.db.hidden and "your position is hidden." or "sharing your position again."))
     elseif cmd == "options" or cmd == "settings" then
         CF.OpenOptions()
     elseif cmd == "debug" then
         local map, x, y = LIB.MyPosition()
-        print(("%s debug: map %s (%s) at %s, %s; size known: %s; lockdown: %s"):format(TAG, tostring(map),
-            LIB.MapName(map), x and ("%.4f"):format(x) or "-", y and ("%.4f"):format(y) or "-",
-            tostring(map and LIB.Maps and LIB.Maps[map] ~= nil), tostring(LIB.InChatLockdown())))
+        print(("%s debug: map %s (%s) at %s, %s; size known: %s; lockdown: %s; hidden: %s"):format(TAG,
+            tostring(map), LIB.MapName(map), x and ("%.4f"):format(x) or "-", y and ("%.4f"):format(y) or "-",
+            tostring(map and LIB.Maps and LIB.Maps[map] ~= nil), tostring(LIB.InChatLockdown()),
+            tostring(CF.db.hidden)))
+        local sub, level, class = CF.AboutMe()
+        print(("  about me: %s, level %s, %s"):format(sub ~= "" and sub or "-", tostring(level), tostring(class)))
         if LIB.CommStats then
             local sent, received = LIB.CommStats(PREFIX)
             print(("  messages: %s sent, %s received"):format(tostring(sent), tostring(received)))
         end
+        if CF.OpenDebug then CF.OpenDebug() end
         for full, p in pairs(CF.peers) do
-            print(("  %s: %s, seen %ds ago"):format(full, p.hidden and "hidden" or
-                ("map %d %.4f %.4f"):format(p.map, p.x, p.y), GetTime() - p.seen))
+            print(("  %s%s: %s, seen %ds ago"):format(full, p.open and " (open)" or "", p.hidden and "hidden" or
+                ("map %d (zone %s) %.4f %.4f %s"):format(p.map, tostring(CF.ZoneOf(p.map)), p.x, p.y,
+                    tostring(p.sub)), GetTime() - p.seen))
         end
     else
         print(TAG .. " v" .. CF.version .. " commands:")
-        print("  /campfire  - open the window: guildies with Campfire and how far away they are")
+        print("  /campfire  - open the window: players with Campfire near you")
         print("  /campfire list  - the same list in chat")
-        print("  /campfire share  - start / stop sharing your position (now " .. (CF.db.share and "on" or "off") .. ")")
+        print("  /campfire hide  - hide your position / share it again (now " .. (CF.db.hidden and "hidden" or "shared") .. ")")
         print("  /campfire options  - open the settings")
     end
 end
@@ -270,7 +409,7 @@ end
 -- Startup
 -- ---------------------------------------------------------------------------
 LIB.On("PLAYER_LOGIN", function()
-    CF.db = LIB.PrepareDB(CampfireDB, defaults, nil, 1)
+    CF.db = LIB.PrepareDB(CampfireDB, defaults, migrations, 3)
     CampfireDB = CF.db
     LIB.RegisterComm(PREFIX, OnMessage)
     RegisterLauncher()
@@ -282,4 +421,5 @@ LIB.On("PLAYER_LOGIN", function()
         CF.SendPosition("login")
     end)
     C_Timer.NewTicker(5, function() CF.SendPosition("tick") end)
+    if CF.StartOpen then CF.StartOpen() end
 end)
