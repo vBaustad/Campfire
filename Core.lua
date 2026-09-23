@@ -15,6 +15,12 @@ local STALE = 240       -- forget a guildie after this many seconds without news
 local HEARTBEAT = 90    -- resend at least this often while standing still
 local MIN_GAP = 15      -- never send more often than this while moving
 local MOVE_YARDS = 40   -- ...and only once we've moved this far
+-- Neighbour mode: while a Campfire player shares our zone, someone may well be watching our dot on
+-- the map, so we send more often - but only while actually moving.
+local NEAR_GAP = 5
+local NEAR_YARDS = 15
+local CROWD_ON = 10     -- more than this many in the zone (a city): back to the slow rate
+local CROWD_OFF = 8     -- ...and only back to the fast rate below this, so it doesn't flip about
 local RIGHT_HERE = 40   -- closer than this reads "right here"
 
 CF.PROTO = PROTO
@@ -24,7 +30,9 @@ CF.STALE = STALE
 -- openShare: besides the guild, also share with Campfire players on our faction over a hidden
 --   channel (Open.lua). Custom channels are per faction, so the other faction never sees it.
 -- zoneOnly: list only players in our zone (the window's "Show all zones" is its opposite).
-local defaults = { hidden = false, zoneOnly = true, openShare = true }
+-- mapPins: a dot per player on the world map and the zone map (MapPins.lua).
+-- mapZoneOnly: only draw those dots on the zone map you are looking at, not on the continent.
+local defaults = { hidden = false, zoneOnly = true, openShare = true, mapPins = true, mapZoneOnly = true }
 local migrations = {
     -- 2: openShare became opt-out (it was off by default in the first test builds).
     [2] = function(db) db.openShare = true end,
@@ -37,6 +45,8 @@ local migrations = {
 }
 
 CF.peers = {}           -- ["Name-Realm"] = { map, x, y, seen, open, sub, level, class } or { seen, hidden = true }
+local MAX_PEERS = 300   -- hard cap on everyone we track, whatever the channel
+local SENDER_GAP = 3    -- ignore a sender that talks faster than the protocol allows
 -- Messages: P = position, H = no position (indoors/instance), X = stopped sharing, Q = where is everyone?
 -- P;proto;map;x;y;subzone;level;class - the last three were added later, so older clients ignore them.
 
@@ -47,11 +57,24 @@ end
 -- ---------------------------------------------------------------------------
 -- Who we are, for the message
 -- ---------------------------------------------------------------------------
---- Text that came from another player: no separators, no escape codes, and not too long.
+--- Text that came from another player. Anything we show must be stripped first: a pipe would let a
+--- sender inject |H item links, |T textures or |c colour codes into our window, tooltips and chat,
+--- and control characters break lines apart. Also capped, so nobody sends a wall of text.
 function CF.CleanText(s)
     if type(s) ~= "string" then return nil end
-    s = s:gsub("[;|\r\n]", ""):sub(1, 40)
+    s = s:gsub("|", "/"):gsub("%c", ""):gsub(";", ""):sub(1, 40)
+    s = s:gsub("^%s+", ""):gsub("%s+$", "")
     return s ~= "" and s or nil
+end
+
+--- A position from the wire: a real map we know, and coordinates inside it.
+function CF.ValidPosition(map, x, y)
+    map, x, y = tonumber(map), tonumber(x), tonumber(y)
+    if not (map and x and y) then return nil end
+    if map < 1 or map ~= math.floor(map) then return nil end
+    if x < 0 or x > 1 or y < 0 or y > 1 then return nil end
+    if not ((LIB.Maps and LIB.Maps[map]) or C_Map.GetMapInfo(map)) then return nil end
+    return map, x, y
 end
 
 --- Where we are within the zone: "Goldshire", "Fargodeep Mine"; nil in the open.
@@ -82,6 +105,9 @@ local last = { at = -math.huge }
 --- The name to whisper: on our own realm the client wants "Name", not "Name-Realm".
 --- Stored names and comparisons keep the full form. LIB.Send normalises its own targets.
 function CF.WhisperName(full)
+    -- A name comes from the client, not from a message body, but it ends up in a chat line, so it is
+    -- cleaned like anything else before use.
+    full = CF.CleanText(full)
     if LIB.WhisperName then return LIB.WhisperName(full) end
     if not full then return nil end
     local name, realm = full:match("^(.-)%-(.+)$")
@@ -102,6 +128,21 @@ local function PositionText()
     return ("P;%d;%d;%.4f;%.4f;%s;%d;%s"):format(PROTO, map, x, y, sub, level, class), map, x, y
 end
 
+--- Is anyone with Campfire in our zone, without it being a crowd? Hysteretic: it takes more than
+--- CROWD_ON to fall back, and fewer than CROWD_OFF to speed up again.
+local crowded = false
+local function Neighbours()
+    local myZone = CF.ZoneOf(LIB.MapId())
+    if not myZone then return false end
+    local n = 0
+    for _, p in pairs(CF.peers) do
+        if not p.hidden and CF.ZoneOf(p.map) == myZone then n = n + 1 end
+    end
+    if n > CROWD_ON then crowded = true elseif n < CROWD_OFF then crowded = false end
+    return n > 0 and not crowded, n
+end
+CF.Neighbours = Neighbours
+
 --- reason: "tick" (regular check, only sends when moved or due) or anything else (sends unless we just did).
 function CF.SendPosition(reason)
     if not (CF.Sharing() and IsInGuild()) then return end
@@ -119,9 +160,12 @@ function CF.SendPosition(reason)
         return
     end
     if reason == "tick" then
-        if elapsed < MIN_GAP then return end
+        local gap, yards = MIN_GAP, MOVE_YARDS
         local moved = LIB.Distance(map, x, y, last.map, last.x, last.y)
-        if elapsed < HEARTBEAT and moved and moved < MOVE_YARDS then return end
+        -- Moving, with a neighbour to see it: keep the dot alive. Standing still stays on the heartbeat.
+        if moved and moved > 0 and Neighbours() then gap, yards = NEAR_GAP, NEAR_YARDS end
+        if elapsed < gap then return end
+        if elapsed < HEARTBEAT and moved and moved < yards then return end
     elseif elapsed < 5 and last.map then
         return
     end
@@ -138,16 +182,45 @@ end
 -- ---------------------------------------------------------------------------
 -- Receiving
 -- ---------------------------------------------------------------------------
+--- Room for one more? Beyond the cap we drop the stalest entry we track rather than grow forever.
+function CF.MakeRoom(sender)
+    if CF.peers[sender] then return true end
+    local n, oldest, oldestAt = 0, nil, math.huge
+    for full, p in pairs(CF.peers) do
+        n = n + 1
+        -- Players outside the guild go first, then whoever we heard from longest ago.
+        local age = p.seen - (p.open and 0 or 1e6)
+        if age < oldestAt then oldest, oldestAt = full, age end
+    end
+    if n < MAX_PEERS then return true end
+    if not oldest then return false end
+    CF.peers[oldest] = nil
+    return true
+end
+
+--- Senders that talk faster than the protocol allows are ignored, so nobody can spam us.
+local heardAt = {}
+function CF.TooSoon(sender, gap)
+    local now = GetTime()
+    local last = heardAt[sender]
+    if last and now - last < (gap or SENDER_GAP) then return true end
+    heardAt[sender] = now
+    return false
+end
+
 local function OnMessage(_, text, dist, sender)
+    cached = nil    -- peers changed; the next Nearby() rebuilds
     -- LibForever only passes on guild messages and whispers from guildies.
     local kind, proto, a, b, c, sub, level, class = strsplit(";", text)
     if tonumber(proto) ~= PROTO then return end
     if kind == "P" then
-        local map, x, y = tonumber(a), tonumber(b), tonumber(c)
-        if not (map and x and y) then return end
+        local map, x, y = CF.ValidPosition(a, b, c)
+        if not map then return end
+        if CF.TooSoon(sender) or not CF.MakeRoom(sender) then return end
         CF.peers[sender] = { map = map, x = x, y = y, seen = GetTime(),
             sub = CF.CleanText(sub), level = CF.ValidLevel(level), class = CF.ValidClass(class) }
     elseif kind == "H" then
+        if CF.TooSoon(sender) or not CF.MakeRoom(sender) then return end
         CF.peers[sender] = { seen = GetTime(), hidden = true }
     elseif kind == "X" then
         -- They stopped sharing: forget them now.
@@ -202,7 +275,12 @@ end
 
 --- Players running Campfire, nearest first: { full, peer, yards, dir, sameZone }.
 --- With zoneOnly on, only players in our zone are listed; the second return counts the rest.
+--- The window, the status line, the tooltips and the map all ask for this, several times a second,
+--- so the answer is kept for a moment instead of walking every peer each time.
+local cached, cachedAt, cachedElsewhere = nil, -1, 0
 function CF.Nearby()
+    local now = GetTime()
+    if cached and now - cachedAt < 0.25 then return cached, cachedElsewhere end
     local map, x, y = LIB.MyPosition()
     local myZone = CF.ZoneOf(map)
     local zoneOnly = CF.db and CF.db.zoneOnly
@@ -227,6 +305,7 @@ function CF.Nearby()
         if l.yards or r.yards then return l.yards ~= nil end
         return l.full < r.full
     end)
+    cached, cachedAt, cachedElsewhere = list, now, elsewhere
     return list, elsewhere
 end
 
@@ -244,8 +323,9 @@ function CF.RowText(e)
     local r = LIB.roster[e.full]
     local class = (r and r.class) or p.class
     local level = (r and r.level) or p.level
-    -- Players outside the guild (open channel) are grey.
-    local name = p.open and ("|cff999999" .. LIB.ShortName(e.full) .. "|r") or LIB.ColorName(e.full, class)
+    -- Everyone gets their class colour; a green dot marks the ones outside the guild, like their
+    -- green halo on the map.
+    local name = (p.open and ("|cff26ff66" .. [[•]] .. "|r ") or "") .. LIB.ColorName(e.full, class)
 
     local where
     if p.hidden then
@@ -258,9 +338,7 @@ function CF.RowText(e)
     end
 
     local className = class and ((LOCALIZED_CLASS_NAMES_MALE and LOCALIZED_CLASS_NAMES_MALE[class]) or class)
-    if className then
-        className = p.open and className or ("|c" .. LIB.ClassColor(class) .. className .. "|r")
-    end
+    if className then className = "|c" .. LIB.ClassColor(class) .. className .. "|r" end
     local who = (level and tostring(level) or "") .. ((level and className) and " " or "") .. (className or "")
 
     local how
@@ -308,6 +386,26 @@ function CF.SetShowAllZones(all)
     LIB.Fire("CAMPFIRE_PEERS")
 end
 
+function CF.SetMapPins(on)
+    CF.db.mapPins = on and true or false
+    if CF.RefreshMapPins then CF.RefreshMapPins() end
+end
+
+function CF.SetMapZoneOnly(on)
+    CF.db.mapZoneOnly = on and true or false
+    if CF.RefreshMapPins then CF.RefreshMapPins() end
+end
+
+--- Map dots are GuildMap's speciality, so leave them off when it is installed - once, so the
+--- player's own choice sticks afterwards.
+local function DefaultMapPins()
+    if CF.db.mapPinsDefaulted then return end
+    CF.db.mapPinsDefaulted = true
+    local guildMap = C_AddOns and ((C_AddOns.DoesAddOnExist and C_AddOns.DoesAddOnExist("GuildMap"))
+        or (C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("GuildMap")))
+    if guildMap then CF.db.mapPins = false end
+end
+
 --- "2 in your zone (1 guildie), 3 more elsewhere." The guildie count only shows when the list also
 --- has players from outside the guild.
 local function StatusText()
@@ -327,6 +425,15 @@ local function StatusText()
     return text .. "."
 end
 CF.StatusText = StatusText
+
+--- The one short line under the window's toggles: "2 nearby - 3 elsewhere".
+function CF.ShortStatus()
+    local list, elsewhere = CF.Nearby()
+    if #list == 0 and elsewhere == 0 then return "No one nearby" end
+    local text = ("%d nearby"):format(#list)
+    if CF.db.zoneOnly and elsewhere > 0 then text = text .. (" - %d elsewhere"):format(elsewhere) end
+    return text
+end
 
 local function TooltipLines(add)
     add(TAG)
@@ -378,6 +485,12 @@ SlashCmdList.CAMPFIRE = function(msg)
         print(TAG .. ": " .. (CF.db.hidden and "your position is hidden." or "sharing your position again."))
     elseif cmd == "options" or cmd == "settings" then
         CF.OpenOptions()
+    elseif cmd == "debug camp watch" then
+        if CF.ProbeWatch then CF.ProbeWatch(180) end
+    elseif cmd == "debug camp" or cmd == "debug camp all" then
+        -- Research probe for camps; deliberately not in the help text. "all" lists every buff you
+        -- have, to find camp auras whose name doesn't say "camp".
+        if CF.ProbeCamp then CF.ProbeCamp(cmd == "debug camp all") end
     elseif cmd == "debug" then
         local map, x, y = LIB.MyPosition()
         print(("%s debug: map %s (%s) at %s, %s; size known: %s; lockdown: %s; hidden: %s"):format(TAG,
@@ -390,6 +503,8 @@ SlashCmdList.CAMPFIRE = function(msg)
             local sent, received = LIB.CommStats(PREFIX)
             print(("  messages: %s sent, %s received"):format(tostring(sent), tostring(received)))
         end
+        local fast, inZone = Neighbours()
+        print(("  neighbours in zone: %s, fast sending: %s"):format(tostring(inZone), tostring(fast)))
         if CF.OpenDebug then CF.OpenDebug() end
         for full, p in pairs(CF.peers) do
             print(("  %s%s: %s, seen %ds ago"):format(full, p.open and " (open)" or "", p.hidden and "hidden" or
@@ -414,8 +529,10 @@ LIB.On("PLAYER_LOGIN", function()
     LIB.RegisterComm(PREFIX, OnMessage)
     RegisterLauncher()
     RegisterMinimap()
+    DefaultMapPins()
     CF.RegisterOptions()
     CF.RegisterIntro()
+    if CF.StartMapPins then CF.StartMapPins() end
     C_Timer.After(5, function()
         Send(("Q;%d"):format(PROTO))
         CF.SendPosition("login")

@@ -59,6 +59,11 @@ function CF.RegisterIntro()
         id = "Campfire", title = "Campfire", version = 1, order = 30,
         icon = "Interface\\AddOns\\Campfire\\Media\\icon",
         subtitle = "See who's nearby, and meet up.",
+        blurb = "See which guildies and Campfire players on your faction are in your zone, and where.",
+        -- "Open" on the welcome card opens the Campfire window, not the settings.
+        onOpen = function() CF.OpenPanel() end,
+        -- Campfire needs no setup, so this only shows if that ever changes.
+        reason = "Choose what you share before anyone can see you.",
         build = Build,
         onShow = function(page) if page.hide then page.hide:SetChecked(CF.db.hidden) end end,
     }, CF.db)

@@ -1,0 +1,14 @@
+<Ui xmlns="http://www.blizzard.com/wow/ui/">
+    <!-- One dot per Campfire player on the world map and the battlefield (zone) map.
+         The map's own pin pool builds these from the template; the mixin lives in MapPins.lua.
+         Media\dot.tga is a white dot with a thin dark ring painted in, so it only needs tinting.
+         Small, and the same size at every zoom: no glow, nothing that pulses. -->
+    <Frame name="CampfireMapPinTemplate" mixin="CampfireMapPinMixin" enableMouse="true" virtual="true">
+        <Size x="10" y="10"/>
+        <Layers>
+            <Layer level="ARTWORK">
+                <Texture parentKey="Dot" file="Interface\AddOns\Campfire\Media\dot" setAllPoints="true"/>
+            </Layer>
+        </Layers>
+    </Frame>
+</Ui>

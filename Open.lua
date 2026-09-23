@@ -19,6 +19,10 @@ CF.OPEN_STALE = 420     -- forget a stranger after this long without news
 
 C_ChatInfo.RegisterAddonMessagePrefix(OPREFIX)
 
+-- Every string that arrives from a stranger goes through this before it is stored or shown: it
+-- strips pipes (no |H links, |T textures or |c colours), control characters, and caps the length.
+local Clean = CF.CleanText
+
 local last = { at = -math.huge }
 local heard = {}        -- ["Name-Realm"] = GetTime() of the last accepted position
 local crossFaction = 0  -- positions seen from the other faction (should stay 0)
@@ -204,13 +208,13 @@ LIB.On("CHAT_MSG_ADDON", function(prefix, text, chatType, sender)
     end
     if kind ~= "P" then return end
     if heard[sender] and now - heard[sender] < ACCEPT_GAP then return end
-    local map, x, y = tonumber(a), tonumber(b), tonumber(c)
-    if not (map and x and y) or x < 0 or x > 1 or y < 0 or y > 1 then return end
-    if not ((LIB.Maps and LIB.Maps[map]) or C_Map.GetMapInfo(map)) then return end
+    local map, x, y = CF.ValidPosition(a, b, c)
+    if not map then return end
     if not CF.peers[sender] and OpenCount() >= MAX_PEERS then return end
+    if not CF.MakeRoom(sender) then return end
     heard[sender] = now
     CF.peers[sender] = { map = map, x = x, y = y, seen = now, open = true,
-        sub = CF.CleanText(sub), level = CF.ValidLevel(level), class = CF.ValidClass(class) }
+        sub = Clean(sub), level = CF.ValidLevel(level), class = CF.ValidClass(class) }
     LIB.Fire("CAMPFIRE_PEERS")
 end)
 

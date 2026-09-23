@@ -43,7 +43,7 @@ local function Refresh()
     win.empty:SetText(#list == 0 and CF.EmptyText(elsewhere) or "")
     win.hide:SetChecked(CF.db.hidden)
     win.allZones:SetChecked(not CF.db.zoneOnly)
-    win.status:SetText(CF.StatusText())
+    win.status:SetText(CF.ShortStatus())
 end
 
 local function BuildRow(row)
@@ -77,7 +77,7 @@ local function BuildRow(row)
     row:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(LIB.ShortName(self.full))
-        if self.open then GameTooltip:AddLine("Not in your guild", 0.6, 0.6, 0.6) end
+        if self.open then GameTooltip:AddLine("Not in your guild", 0.15, 1, 0.4) end
         GameTooltip:AddLine("Click to whisper", 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
@@ -196,9 +196,11 @@ local function Build()
     win.status:SetPoint("RIGHT", settings, "LEFT", -8, 0)
     win.status:SetJustifyH("LEFT")
 
-    -- Distances change as you move, without any event; a light tick keeps them current.
+    -- Distances change as you move, without any event; a light tick keeps them current. It only
+    -- matters while the window is up and has something in it.
     local elapsed = 0
-    win:SetScript("OnUpdate", function(_, dt)
+    win:SetScript("OnUpdate", function(self, dt)
+        if not self:IsShown() or not next(CF.peers) then return end
         elapsed = elapsed + dt
         if elapsed >= 1 then elapsed = 0; Refresh() end
     end)

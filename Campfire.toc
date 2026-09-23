@@ -3,7 +3,7 @@
 ## Category: YippYapp
 ## Notes: Find other players out in the world: see which guildies and Campfire players on your faction are nearby, where they are and how far away, and whisper them in one click. Part of YippYapp - addons for WoW: Forever that work even better together.
 ## Author: vebjorn
-## Version: 0.1.0-beta3
+## Version: 0.1.0-beta4
 ## IconTexture: Interface\AddOns\Campfire\Media\icon
 ## SavedVariables: CampfireDB
 ## AddonCompartmentFunc: Campfire_OnAddonCompartmentClick
@@ -31,4 +31,7 @@ Core.lua
 Open.lua
 Options.lua
 Panel.lua
+MapPins.lua
+MapPins.xml
+Probe.lua
 Intro.lua
