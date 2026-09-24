@@ -10,6 +10,17 @@ local win
 function CF.EmptyText(elsewhere)
     local open = CF.OpenActive and CF.OpenActive()
     local inGuild = IsInGuild()
+    -- Everyone we know is in your group: the game draws them for you, so Campfire looks empty on
+    -- purpose. Say that, rather than leaving it looking broken.
+    local group, known, grouped = CF.GroupMembers(), 0, 0
+    for full in pairs(CF.peers) do
+        known = known + 1
+        if group[full] then grouped = grouped + 1 end
+    end
+    if known > 0 and known == grouped then
+        return ("Everyone Campfire can see is in your group.\n\nThe game already shows %s on the map, so "
+            .. "Campfire leaves the dots off to keep them clickable."):format(grouped == 1 and "them" or "them all")
+    end
     local tick = "Tick \"Also share with other Campfire players on my faction\" in the settings"
     if not inGuild and not open then
         if CF.db.hidden then
@@ -69,10 +80,8 @@ local function BuildRow(row)
     row.how:SetWordWrap(false)
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
     row:SetScript("OnClick", function(self)
-        local target = self.full and CF.WhisperName(self.full)
-        if not target then return end
-        if ChatFrameUtil and ChatFrameUtil.OpenChat then ChatFrameUtil.OpenChat("/w " .. target .. " ")
-        elseif ChatFrame_OpenChat then ChatFrame_OpenChat("/w " .. target .. " ") end
+        -- CF.Whisper, not a "/w name" line: Forever names have a space in them.
+        CF.Whisper(self.full)
     end)
     row:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")

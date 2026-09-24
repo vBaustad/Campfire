@@ -123,6 +123,31 @@ function CF.WhisperName(full)
     return realm == LIB.Realm() and name or full
 end
 
+--- Open the chat box addressed to someone, ready for them to type.
+--- NEVER by typing "/w <name> ": every name on Forever is "First Last", and the chat box splits on
+--- the first space, so it would whisper "Lorr" with the message "Den". SendTell takes the name as a
+--- target instead of as text, the way Blizzard's own UI does, so a space in the name is fine.
+--- The same reason as CF.WhisperName: the name must never travel as part of a command line.
+function CF.Whisper(full)
+    local target = CF.WhisperName(full)
+    if not target then return end
+    if ChatFrame_SendTellWithMessage then
+        ChatFrame_SendTellWithMessage(target, "")
+        return
+    end
+    if ChatFrame_SendTell then
+        ChatFrame_SendTell(target)
+        return
+    end
+    -- Last resort on a client with neither: right only for a one-word name.
+    local line = "/w " .. target .. " "
+    if ChatFrameUtil and ChatFrameUtil.OpenChat then
+        ChatFrameUtil.OpenChat(line)
+    elseif ChatFrame_OpenChat then
+        ChatFrame_OpenChat(line)
+    end
+end
+
 --- To the guild, or whispered to one guildie when target is given.
 local function Send(text, target)
     LIB.Send(PREFIX, text, target and "WHISPER" or "GUILD", target, "BULK")
@@ -256,6 +281,47 @@ local function Direction(map, x, y, p)
     local angle = math.atan2(-dy, dx)   -- map y grows southwards
     local i = math.floor(angle / (2 * math.pi) * 8 + 0.5) % 8
     return DIRS[i + 1]
+end
+
+--- The key a group unit gets in CF.peers. UnitName hands back the realm RAW ("Bleeding Hollow",
+--- "Zul'jin"), while the key we store comes from an addon message, where the realm is normalised
+--- ("BleedingHollow", "Zuljin"). Strip spaces, hyphens and apostrophes, or a cross-realm group member
+--- never matches and the double pin comes back.
+--- LibForever 1.0.6 brings LIB.UnitKey/LIB.NormalizeRealm; swap to those once it is tagged.
+function CF.GroupKey(name, realm)
+    if type(name) ~= "string" or name == "" then return nil end
+    if type(realm) == "string" and realm ~= "" then
+        local normal = LIB.NormalizeRealm and LIB.NormalizeRealm(realm) or (realm:gsub("[%s%-']", ""))
+        name = name .. "-" .. normal
+    end
+    return LIB.FullName(name)
+end
+
+--- Who is in your party or raid, as "Name-Realm". Read from the group units themselves, not by
+--- comparing names, because two players on different realms can share a name. Cached for a second:
+--- a redraw asks for it once per peer otherwise.
+local groupSet, groupAt = {}, -1
+function CF.GroupMembers()
+    local now = GetTime()
+    if now - groupAt < 1 then return groupSet end
+    local set = {}
+    local total = GetNumGroupMembers() or 0
+    if total > 0 then
+        local raid = IsInRaid()
+        local prefix = raid and "raid" or "party"
+        for i = 1, (raid and total or total - 1) do
+            local unit = prefix .. i
+            if UnitExists(unit) then
+                local name, realm = UnitName(unit)
+                if type(name) == "string" and not (issecretvalue and issecretvalue(name)) then
+                    local full = CF.GroupKey(name, realm)
+                    if full then set[full] = true end
+                end
+            end
+        end
+    end
+    groupSet, groupAt = set, now
+    return set
 end
 
 --- The zone a map belongs to: walks up from sub-zone, cave and floor maps to the zone map, so
@@ -449,12 +515,17 @@ local function StatusText()
 end
 CF.StatusText = StatusText
 
---- The one short line under the window's toggles: "2 nearby - 3 elsewhere".
+--- The one short line under the window's toggles: "2 nearby - 3 elsewhere", plus a word about the
+--- ones we deliberately leave off the map because the game already draws them.
 function CF.ShortStatus()
     local list, elsewhere = CF.Nearby()
     if #list == 0 and elsewhere == 0 then return "No one nearby" end
     local text = ("%d nearby"):format(#list)
     if CF.db.zoneOnly and elsewhere > 0 then text = text .. (" - %d elsewhere"):format(elsewhere) end
+    local group = CF.GroupMembers()
+    local grouped = 0
+    for _, e in ipairs(list) do if group[e.full] then grouped = grouped + 1 end end
+    if grouped > 0 then text = text .. (" (%d in your group)"):format(grouped) end
     return text
 end
 

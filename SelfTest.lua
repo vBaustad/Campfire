@@ -9,10 +9,10 @@ local LIB = LibStub("LibForever-1.0")
 -- Every name another file reaches for. A missing one is the "deleted but still called" bug.
 local NEEDED = {
     "Sharing", "CleanText", "MySubZone", "AboutMe", "ValidClass", "ValidLevel", "ValidPosition",
-    "WhisperName", "SendPosition", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
+    "WhisperName", "Whisper", "SendPosition", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
     "SetHidden", "SetShowAllZones", "SetMapPins", "SetMapZoneOnly", "SetMapGuildOnly", "StatusText", "ShortStatus",
     "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions", "RegisterIntro",
-    "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
+    "GroupMembers", "GroupKey", "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
     "OpenHiddenChanged", "OpenDebug", "Say",
 }
 
@@ -64,6 +64,27 @@ local function Run()
         if type(text) ~= "string" or text == "" then return false, "a status line came out empty" end
         checked = checked + 1
     end
+
+    -- The group key must come out in the same shape as the keys in CF.peers, which arrive from
+    -- addon messages with the realm normalised. A raw realm with a space is the case that broke.
+    local raw = CF.GroupKey("Testdummy", "Bleeding Hollow")
+    if raw ~= "Testdummy-BleedingHollow" then
+        return false, "GroupKey() gives " .. tostring(raw) .. ", not Testdummy-BleedingHollow"
+    end
+    if CF.GroupKey("Testdummy", "Zul'jin") ~= "Testdummy-Zuljin" then
+        return false, "GroupKey() keeps the apostrophe in a realm name"
+    end
+    if CF.GroupKey("Testdummy", "") ~= LIB.FullName("Testdummy") then
+        return false, "GroupKey() disagrees with FullName() on your own realm"
+    end
+    checked = checked + 3
+
+    -- Whispering: the name must reach the chat box as a target, never inside a "/w ..." line,
+    -- because every Forever name has a space in it. We check the API is there rather than open a box.
+    if not (ChatFrame_SendTellWithMessage or ChatFrame_SendTell) then
+        return false, "no ChatFrame_SendTell on this client: a whisper would fall back to /w and break two-word names"
+    end
+    checked = checked + 1
 
     -- Reading from the wire: the guards that keep a stranger's text out of the UI.
     if CF.CleanText("a|cffff0000b|r\nc") ~= "a/cffff0000b/rc" then return false, "CleanText() no longer strips pipes" end

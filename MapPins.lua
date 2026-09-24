@@ -105,20 +105,15 @@ function CampfireMapPinMixin:OnMouseLeave()
     GameTooltip:Hide()
 end
 
-local function Whisper(full)
-    local target = full and CF.WhisperName(full)
-    if not target then return end
-    if ChatFrameUtil and ChatFrameUtil.OpenChat then ChatFrameUtil.OpenChat("/w " .. target .. " ")
-    elseif ChatFrame_OpenChat then ChatFrame_OpenChat("/w " .. target .. " ") end
-end
-
 -- The map calls one of these depending on the client's pin code; both do the same.
+-- CF.Whisper, not a "/w name" line: Forever names have a space in them, and a chat box would read
+-- the surname as the start of the message.
 function CampfireMapPinMixin:OnMouseClickAction(button)
-    if button == "LeftButton" then Whisper(self.full) end
+    if button == "LeftButton" then CF.Whisper(self.full) end
 end
 
 function CampfireMapPinMixin:OnClick(button)
-    if button == "LeftButton" then Whisper(self.full) end
+    if button == "LeftButton" then CF.Whisper(self.full) end
 end
 
 -- ---------------------------------------------------------------------------
@@ -135,7 +130,7 @@ local function NewProvider()
 
     function provider:RefreshAllData()
         self:RemoveAllData()
-        CF.mapHidden = 0
+        CF.mapHidden, CF.mapInGroup = 0, 0
         if not CF.MapPinsEnabled() or not next(CF.peers) then return end
         local map = self:GetMap()
         local mapID = map:GetMapID()
@@ -147,11 +142,16 @@ local function NewProvider()
         local shownZone = CF.ZoneOf(mapID)
         if zoneOnly and shownZone ~= mapID then return end
 
+        -- The game already draws your party and raid on the map, in the same spot: a second dot on
+        -- top of theirs only makes both harder to click. They stay in the window's list.
+        local group = CF.GroupMembers()
         local myMap, myX, myY = LIB.MyPosition()
-        local draw = {}
+        local draw, inGroup = {}, 0
         for full, p in pairs(CF.peers) do
+            if group[full] then inGroup = inGroup + 1 end
             -- No dot for anyone indoors or in an instance: they have no position to show.
-            if not p.hidden and not (guildOnly and p.open) and not (zoneOnly and CF.ZoneOf(p.map) ~= shownZone) then
+            if not p.hidden and not group[full] and not (guildOnly and p.open)
+                and not (zoneOnly and CF.ZoneOf(p.map) ~= shownZone) then
                 local x, y = PositionOnMap(p, mapID)
                 if x then
                     draw[#draw + 1] = { full = full, p = p, x = x, y = y,
@@ -159,6 +159,7 @@ local function NewProvider()
                 end
             end
         end
+        CF.mapInGroup = inGroup
         -- Nearest first, so the cap drops the far-away ones.
         table.sort(draw, function(l, r) return l.yards < r.yards end)
         for i, d in ipairs(draw) do
@@ -230,11 +231,14 @@ function CF.StartMapPins()
     end
     -- A busy guild sends several positions a second. Coalesce them: one redraw shortly after the
     -- last one, and the 2s ticker keeps the map fresh if they never stop coming.
-    LIB.Listen("CAMPFIRE_PEERS", function()
+    local function Redraw()
         LIB.Debounce("CampfirePins", 0.4, function()
             CF.RefreshMapPins()
             StartTicker()
         end)
-    end)
+    end
+    LIB.Listen("CAMPFIRE_PEERS", Redraw)
+    -- Joining or leaving a group changes who we skip, and no position needs to arrive for that.
+    LIB.On("GROUP_ROSTER_UPDATE", Redraw)
     StartTicker()
 end
