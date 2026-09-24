@@ -30,8 +30,10 @@ CF.PROTO = PROTO
 --   channel (Open.lua). Custom channels are per faction, so the other faction never sees it.
 -- zoneOnly: list only players in our zone (the window's "Show all zones" is its opposite).
 -- mapPins: a dot per player on the world map and the zone map (MapPins.lua).
--- mapZoneOnly: only draw those dots on the zone map you are looking at, not on the continent.
-local defaults = { hidden = false, zoneOnly = true, openShare = true, mapPins = true, mapZoneOnly = true }
+-- mapGuildOnly: only guildies get a dot. With strangers left out there is no crowd to fear, so...
+-- mapZoneOnly: ...this starts off, and the whole continent can be shown at once.
+local defaults = { hidden = false, zoneOnly = true, openShare = true, mapPins = true,
+    mapGuildOnly = true, mapZoneOnly = false }
 local migrations = {
     -- 2: openShare became opt-out (it was off by default in the first test builds).
     [2] = function(db) db.openShare = true end,
@@ -40,6 +42,13 @@ local migrations = {
     [3] = function(db)
         if db.share == false then db.hidden = true end
         db.share = nil
+    end,
+    -- 4: map dots became guild-only by default, which removes the crowd the zone limit guarded
+    -- against, so the zone limit comes off with it - but only for players who never chose. The zone
+    -- limit shipped in beta4, so someone may well have ticked it; mapZoneOnlyChosen marks that.
+    [4] = function(db)
+        if db.mapGuildOnly == nil then db.mapGuildOnly = true end
+        if not db.mapZoneOnlyChosen then db.mapZoneOnly = false end
     end,
 }
 
@@ -394,8 +403,19 @@ function CF.SetMapPins(on)
     if CF.RefreshMapPins then CF.RefreshMapPins() end
 end
 
+--- Ticking either map setting counts as choosing: from here on nothing overwrites it.
 function CF.SetMapZoneOnly(on)
     CF.db.mapZoneOnly = on and true or false
+    CF.db.mapZoneOnlyChosen = true
+    if CF.RefreshMapPins then CF.RefreshMapPins() end
+end
+
+--- Guild-only and zone-only answer the same worry (a crowded map) in two ways, so they move
+--- together instead of fighting: leaving the guild in means keeping the zone limit.
+function CF.SetMapGuildOnly(on)
+    CF.db.mapGuildOnly = on and true or false
+    CF.db.mapZoneOnly = not CF.db.mapGuildOnly
+    CF.db.mapZoneOnlyChosen = true
     if CF.RefreshMapPins then CF.RefreshMapPins() end
 end
 
@@ -534,7 +554,7 @@ end
 -- Startup
 -- ---------------------------------------------------------------------------
 LIB.On("PLAYER_LOGIN", function()
-    CF.db = LIB.PrepareDB(CampfireDB, defaults, migrations, 3)
+    CF.db = LIB.PrepareDB(CampfireDB, defaults, migrations, 4)
     CampfireDB = CF.db
     LIB.RegisterComm(PREFIX, OnMessage)
     RegisterLauncher()

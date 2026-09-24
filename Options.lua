@@ -26,7 +26,7 @@ local function Note(parent, text)
 end
 
 local PAGE_WIDTH = 572   -- the YippYapp window's inner width
-local PAGE_HEIGHT = 480  -- the lib scrolls the page when this is taller than the window's room
+local PAGE_HEIGHT = 560  -- the lib scrolls the page when this is taller than the window's room
 
 function CF.RegisterOptions()
     if category then return end
@@ -86,9 +86,15 @@ function CF.RegisterOptions()
         .. "their class colour. Off by default when GuildMap is installed, since that is what GuildMap does.")
     mapNote:SetPoint("TOPLEFT", mapPins, "BOTTOMLEFT", 30, -2)
 
-    local mapZone = Check(mapNote, -30, -12, "Map dots only in my zone", CF.SetMapZoneOnly)
-    local mapZoneNote = Note(f, "On by default: dots are drawn on a zone map only, so the continent map stays clean. "
-        .. "At most 40 dots are drawn at once, nearest first.")
+    local mapGuild = Check(mapNote, -30, -12, "Only show guildies on the map", CF.SetMapGuildOnly)
+    local mapGuildNote = Note(f, "On by default. Your guild is small enough to show everywhere, so this also "
+        .. "turns the zone limit below off: you see your guild across the zone map and the continent. Leave "
+        .. "Campfire players outside your guild in, and the zone limit comes back on to keep the map readable.")
+    mapGuildNote:SetPoint("TOPLEFT", mapGuild, "BOTTOMLEFT", 30, -2)
+
+    local mapZone = Check(mapGuildNote, -30, -12, "Map dots only in my zone", CF.SetMapZoneOnly)
+    local mapZoneNote = Note(f, "Dots are drawn on a zone map only, so the continent map stays clean. At most "
+        .. "40 dots are drawn at once, nearest first - a safety net that guild-only rarely reaches.")
     mapZoneNote:SetPoint("TOPLEFT", mapZone, "BOTTOMLEFT", 30, -2)
 
     -- Where to find the window.
@@ -119,6 +125,7 @@ function CF.RegisterOptions()
         open:SetChecked(CF.db.openShare)
         allZones:SetChecked(not CF.db.zoneOnly)
         mapPins:SetChecked(CF.db.mapPins)
+        mapGuild:SetChecked(CF.db.mapGuildOnly)
         mapZone:SetChecked(CF.db.mapZoneOnly)
     end
     -- The lib runs the panel's OnShow every time the page is shown; the rest is belt and braces

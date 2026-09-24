@@ -143,6 +143,7 @@ local function NewProvider()
         -- "Only in my zone": only draw on a zone map, and only players in that zone. That keeps the
         -- continent and world maps clean, which is where a crowd would pile up.
         local zoneOnly = CF.db.mapZoneOnly
+        local guildOnly = CF.db.mapGuildOnly
         local shownZone = CF.ZoneOf(mapID)
         if zoneOnly and shownZone ~= mapID then return end
 
@@ -150,7 +151,7 @@ local function NewProvider()
         local draw = {}
         for full, p in pairs(CF.peers) do
             -- No dot for anyone indoors or in an instance: they have no position to show.
-            if not p.hidden and not (zoneOnly and CF.ZoneOf(p.map) ~= shownZone) then
+            if not p.hidden and not (guildOnly and p.open) and not (zoneOnly and CF.ZoneOf(p.map) ~= shownZone) then
                 local x, y = PositionOnMap(p, mapID)
                 if x then
                     draw[#draw + 1] = { full = full, p = p, x = x, y = y,
@@ -227,9 +228,13 @@ function CF.StartMapPins()
             if name == "Blizzard_BattlefieldMap" then AddTo(BattlefieldMapFrame) end
         end)
     end
+    -- A busy guild sends several positions a second. Coalesce them: one redraw shortly after the
+    -- last one, and the 2s ticker keeps the map fresh if they never stop coming.
     LIB.Listen("CAMPFIRE_PEERS", function()
-        CF.RefreshMapPins()
-        StartTicker()
+        LIB.Debounce("CampfirePins", 0.4, function()
+            CF.RefreshMapPins()
+            StartTicker()
+        end)
     end)
     StartTicker()
 end

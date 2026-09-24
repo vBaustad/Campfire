@@ -1,5 +1,9 @@
 # Campfire
 
+## 0.1.0-beta6
+
+- Updated shared YippYapp library.
+
 ## 0.1.0-beta5
 
 - Updated shared YippYapp library.

@@ -10,13 +10,13 @@ local LIB = LibStub("LibForever-1.0")
 local NEEDED = {
     "Sharing", "CleanText", "MySubZone", "AboutMe", "ValidClass", "ValidLevel", "ValidPosition",
     "WhisperName", "SendPosition", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
-    "SetHidden", "SetShowAllZones", "SetMapPins", "SetMapZoneOnly", "StatusText", "ShortStatus",
+    "SetHidden", "SetShowAllZones", "SetMapPins", "SetMapZoneOnly", "SetMapGuildOnly", "StatusText", "ShortStatus",
     "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions", "RegisterIntro",
     "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
     "OpenHiddenChanged", "OpenDebug", "Say",
 }
 
-local SETTINGS = { "hidden", "zoneOnly", "openShare", "mapPins", "mapZoneOnly" }
+local SETTINGS = { "hidden", "zoneOnly", "openShare", "mapPins", "mapGuildOnly", "mapZoneOnly" }
 
 --- A row that isn't in CF.peers, so the row builder is exercised even with nobody around.
 local function FakeEntry()

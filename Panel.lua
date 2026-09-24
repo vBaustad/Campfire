@@ -220,4 +220,6 @@ function CF.OpenPanel()
     win:Raise()
 end
 
-LIB.Listen("CAMPFIRE_PEERS", Refresh)
+-- Same as the map: coalesce a burst of positions into one refresh. The window's own 1 Hz tick is
+-- the backstop when messages never stop arriving.
+LIB.Listen("CAMPFIRE_PEERS", function() LIB.Debounce("CampfirePanel", 0.3, Refresh) end)
