@@ -24,7 +24,6 @@ local CROWD_OFF = 8     -- ...and only back to the fast rate below this, so it d
 local RIGHT_HERE = 40   -- closer than this reads "right here"
 
 CF.PROTO = PROTO
-CF.STALE = STALE
 
 -- hidden: share nothing at all (the one switch in the window).
 -- openShare: besides the guild, also share with Campfire players on our faction over a hidden
@@ -141,7 +140,6 @@ local function Neighbours()
     if n > CROWD_ON then crowded = true elseif n < CROWD_OFF then crowded = false end
     return n > 0 and not crowded, n
 end
-CF.Neighbours = Neighbours
 
 --- reason: "tick" (regular check, only sends when moved or due) or anything else (sends unless we just did).
 function CF.SendPosition(reason)
@@ -366,6 +364,11 @@ end
 -- ---------------------------------------------------------------------------
 -- Hiding, launcher, compartment, slash
 -- ---------------------------------------------------------------------------
+--- print(), unless a self-test is running: a test that passes should say nothing but its own line.
+function CF.Say(text)
+    if not CF.silent then print(text) end
+end
+
 local function OnLauncherClick(button)
     if button == "RightButton" then CF.OpenOptions() else CF.TogglePanel() end
 end
@@ -485,12 +488,19 @@ SlashCmdList.CAMPFIRE = function(msg)
         print(TAG .. ": " .. (CF.db.hidden and "your position is hidden." or "sharing your position again."))
     elseif cmd == "options" or cmd == "settings" then
         CF.OpenOptions()
-    elseif cmd == "debug camp watch" then
-        if CF.ProbeWatch then CF.ProbeWatch(180) end
-    elseif cmd == "debug camp" or cmd == "debug camp all" then
-        -- Research probe for camps; deliberately not in the help text. "all" lists every buff you
-        -- have, to find camp auras whose name doesn't say "camp".
-        if CF.ProbeCamp then CF.ProbeCamp(cmd == "debug camp all") end
+    elseif cmd == "selftest" then
+        -- Also run by /yippyapp test across the family; not in the help text.
+        if CF.SelfTest then CF.SelfTest(false) end
+    elseif cmd:sub(1, 10) == "debug camp" then
+        -- The camp research probe (Probe.lua) is not in the shipped build; add its line back to
+        -- Campfire.toc to use it. Deliberately absent from the help text either way.
+        if not (CF.ProbeCamp and CF.ProbeWatch) then
+            CF.Say(TAG .. ": the camp probe isn't part of this build.")
+        elseif cmd == "debug camp watch" then
+            CF.ProbeWatch(180)
+        else
+            CF.ProbeCamp(cmd == "debug camp all")
+        end
     elseif cmd == "debug" then
         local map, x, y = LIB.MyPosition()
         print(("%s debug: map %s (%s) at %s, %s; size known: %s; lockdown: %s; hidden: %s"):format(TAG,

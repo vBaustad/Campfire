@@ -45,7 +45,6 @@ local function AurasBlocked()
     if C_Secrets and C_Secrets.ShouldAurasBeSecret and C_Secrets.ShouldAurasBeSecret() then return true end
     return false
 end
-CF.ProbeAurasBlocked = AurasBlocked
 
 local function IndexSecret(i)
     return C_Secrets and C_Secrets.ShouldUnitAuraIndexBeSecret

@@ -3,7 +3,7 @@
 ## Category: YippYapp
 ## Notes: Find other players out in the world: see which guildies and Campfire players on your faction are nearby, where they are and how far away, and whisper them in one click. Part of YippYapp - addons for WoW: Forever that work even better together.
 ## Author: vebjorn
-## Version: 0.1.0-beta4
+## Version: 0.1.0-beta5
 ## IconTexture: Interface\AddOns\Campfire\Media\icon
 ## SavedVariables: CampfireDB
 ## AddonCompartmentFunc: Campfire_OnAddonCompartmentClick
@@ -26,6 +26,7 @@ Libs\LibForever-1.0\Windows.lua
 Libs\LibForever-1.0\Minimap.lua
 Libs\LibForever-1.0\Welcome.lua
 Libs\LibForever-1.0\Settings.lua
+Libs\LibForever-1.0\SelfTest.lua
 
 Core.lua
 Open.lua
@@ -33,5 +34,6 @@ Options.lua
 Panel.lua
 MapPins.lua
 MapPins.xml
-Probe.lua
+# Probe.lua is the camp research probe (/campfire debug camp): not shipped. Add the line back to use it.
 Intro.lua
+SelfTest.lua
