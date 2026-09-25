@@ -342,11 +342,19 @@ function CF.GroupMembers()
         for i = 1, (raid and total or total - 1) do
             local unit = prefix .. i
             if UnitExists(unit) then
-                local name, realm = UnitName(unit)
-                if type(name) == "string" and not (issecretvalue and issecretvalue(name)) then
-                    local full = CF.GroupKey(name, realm)
-                    if full then set[full] = true end
+                -- LIB.UnitKey, never UnitName here: on Forever the second value from UnitName is the
+                -- SURNAME, not the realm ("Duplo Bonk" comes back as "Duplo", "Bonk"). Reading it as a
+                -- realm built "Duplo-Bonk", which never matched the peer key "Duplo Bonk-OurRealm",
+                -- so the group filter never skipped anyone. UnitKey decides by value: our own realm
+                -- means a realm, anything else is a surname. It returns nil for a secret name.
+                local full = LIB.UnitKey and LIB.UnitKey(unit)
+                if not full then
+                    local name, realm = UnitName(unit)
+                    if type(name) == "string" and not (issecretvalue and issecretvalue(name)) then
+                        full = CF.GroupKey(name, realm)
+                    end
                 end
+                if full then set[full] = true end
             end
         end
     end

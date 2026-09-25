@@ -79,6 +79,26 @@ local function Run()
     end
     checked = checked + 3
 
+    -- The group filter compares keys built from group units against keys built from addon messages.
+    -- On Forever the second value from UnitName is a SURNAME, not a realm, so a hand-built key was
+    -- always wrong ("Duplo-Bonk" instead of "Duplo Bonk-OurRealm") and the filter never matched.
+    if not LIB.UnitKey then
+        return false, "LibForever has no UnitKey: the group filter would read surnames as realms"
+    end
+    local mine = LIB.UnitKey("player")
+    if type(mine) ~= "string" or not mine:find("-", 1, true) then
+        return false, "UnitKey(\"player\") gives " .. tostring(mine) .. ", not Name-Realm"
+    end
+    local realmPart = mine:match("%-([^%-]+)$")
+    if realmPart ~= LIB.Realm() then
+        return false, "UnitKey ends in " .. tostring(realmPart) .. ", not our realm " .. tostring(LIB.Realm())
+    end
+    -- A full name with a space must survive as one name, not be split into name and realm.
+    if CF.GroupKey("Duplo Bonk", "") ~= "Duplo Bonk-" .. LIB.Realm() then
+        return false, "GroupKey() mangles a name that has a surname in it"
+    end
+    checked = checked + 4
+
     -- Our own messages must never become a peer, whatever the server calls us. This is the check
     -- that would have caught Campfire showing you yourself on the map and in the list.
     if not CF.IsSelf(LIB.Me(), "P;1;1426;0.5000;0.5000;Test;10;MAGE") then
