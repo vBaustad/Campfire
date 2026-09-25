@@ -9,7 +9,7 @@ local LIB = LibStub("LibForever-1.0")
 -- Every name another file reaches for. A missing one is the "deleted but still called" bug.
 local NEEDED = {
     "Sharing", "CleanText", "MySubZone", "AboutMe", "ValidClass", "ValidLevel", "ValidPosition",
-    "WhisperName", "Whisper", "SendPosition", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
+    "WhisperName", "Whisper", "SendPosition", "IsSelf", "NoteSent", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
     "SetHidden", "SetShowAllZones", "SetMapPins", "SetMapZoneOnly", "SetMapGuildOnly", "StatusText", "ShortStatus",
     "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions", "RegisterIntro",
     "GroupMembers", "GroupKey", "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
@@ -76,6 +76,21 @@ local function Run()
     end
     if CF.GroupKey("Testdummy", "") ~= LIB.FullName("Testdummy") then
         return false, "GroupKey() disagrees with FullName() on your own realm"
+    end
+    checked = checked + 3
+
+    -- Our own messages must never become a peer, whatever the server calls us. This is the check
+    -- that would have caught Campfire showing you yourself on the map and in the list.
+    if not CF.IsSelf(LIB.Me(), "P;1;1426;0.5000;0.5000;Test;10;MAGE") then
+        return false, "IsSelf() does not recognise our own name"
+    end
+    local echo = "P;1;1426;0.1234;0.5678;SelfTest;10;MAGE"
+    CF.NoteSent(echo)
+    if not CF.IsSelf("Someone Else-" .. (LIB.Realm() or "Realm"), echo) then
+        return false, "IsSelf() does not recognise a payload we just sent coming back"
+    end
+    if CF.IsSelf("Someone Else-" .. (LIB.Realm() or "Realm"), "P;1;1426;0.9000;0.9000;Other;20;PRIEST") then
+        return false, "IsSelf() mistakes another player's message for our own"
     end
     checked = checked + 3
 

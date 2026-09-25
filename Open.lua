@@ -101,6 +101,7 @@ local rejoined = false  -- one rejoin per InvalidChannel streak
 local function SendOpen(text)
     local id = ChannelId()
     if not id then return false end
+    CF.NoteSent(text)
     local result = C_ChatInfo.SendAddonMessage(OPREFIX, text, "CHANNEL", tostring(id))
     if result == nil or result == true or result == SUCCESS then
         stats.sent = stats.sent + 1
@@ -173,7 +174,9 @@ end
 LIB.On("CHAT_MSG_ADDON", function(prefix, text, chatType, sender)
     if prefix ~= OPREFIX or chatType ~= "CHANNEL" or not Active() then return end
     sender = LIB.FullName(sender)
-    if not sender or sender == LIB.Me() then return end
+    -- Our own echo, by name or by the payload we just sent: our own name alone is not enough,
+    -- because Forever can hide our surname from us while the server still uses it.
+    if CF.IsSelf(sender, text) then return end
     -- Guildies come through the guild channel, which we trust more.
     if LIB.IsGuildie(sender) then return end
     -- Strangers can send anything here: anything that isn't exactly "X;proto" or

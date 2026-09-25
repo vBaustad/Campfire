@@ -22,6 +22,7 @@ local NEAR_YARDS = 15
 local CROWD_ON = 10     -- more than this many in the zone (a city): back to the slow rate
 local CROWD_OFF = 8     -- ...and only back to the fast rate below this, so it doesn't flip about
 local RIGHT_HERE = 40   -- closer than this reads "right here"
+local ECHO_WINDOW = 10  -- a payload of ours coming back within this many seconds is our own echo
 
 CF.PROTO = PROTO
 
@@ -148,8 +149,31 @@ function CF.Whisper(full)
     end
 end
 
+-- Our own messages come back from the server. LibForever drops them when the sender matches our
+-- name, but our name is not something to rely on here: Forever hides your OWN surname (the
+-- UnitSurnameOwn setting), so UnitName("player") can be "Lorr" while the server calls us "Lorr Den",
+-- and the comparison quietly fails - which is how we ended up on our own map and in our own list.
+-- So we also remember what we just sent: a payload coming back within seconds is our own echo.
+local sentAt = {}
+
+function CF.NoteSent(text)
+    local now = GetTime()
+    for old, when in pairs(sentAt) do
+        if now - when > ECHO_WINDOW then sentAt[old] = nil end
+    end
+    sentAt[text] = now
+end
+
+--- True for a message that is really our own coming back.
+function CF.IsSelf(sender, text)
+    if not sender or sender == LIB.Me() then return true end
+    local when = text and sentAt[text]
+    return when ~= nil and (GetTime() - when) < ECHO_WINDOW
+end
+
 --- To the guild, or whispered to one guildie when target is given.
 local function Send(text, target)
+    CF.NoteSent(text)
     LIB.Send(PREFIX, text, target and "WHISPER" or "GUILD", target, "BULK")
 end
 
@@ -168,8 +192,11 @@ local function Neighbours()
     local myZone = CF.ZoneOf(LIB.MapId())
     if not myZone then return false end
     local n = 0
-    for _, p in pairs(CF.peers) do
-        if not p.hidden and CF.ZoneOf(p.map) == myZone then n = n + 1 end
+    local me = LIB.Me()
+    for full, p in pairs(CF.peers) do
+        -- Never count ourselves: a phantom neighbour at zero yards would keep us in the fast
+        -- sending mode for ever, for every user.
+        if full ~= me and not p.hidden and CF.ZoneOf(p.map) == myZone then n = n + 1 end
     end
     if n > CROWD_ON then crowded = true elseif n < CROWD_OFF then crowded = false end
     return n > 0 and not crowded, n
@@ -241,6 +268,9 @@ function CF.TooSoon(sender, gap)
 end
 
 local function OnMessage(_, text, dist, sender)
+    -- Before anything else, and for every kind of message: an "X" of ours coming back would remove
+    -- us again, which is what made this come and go instead of staying broken.
+    if CF.IsSelf(sender, text) then return end
     cached = nil    -- peers changed; the next Nearby() rebuilds
     -- LibForever only passes on guild messages and whispers from guildies.
     local kind, proto, a, b, c, sub, level, class = strsplit(";", text)
