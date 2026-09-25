@@ -13,7 +13,7 @@ function CF.EmptyText(elsewhere)
     -- Everyone we know is in your group: the game draws them for you, so Campfire looks empty on
     -- purpose. Say that, rather than leaving it looking broken.
     local group, known, grouped = CF.GroupMembers(), 0, 0
-    for full in pairs(CF.peers) do
+    for full in pairs(CF.LivePeers()) do
         known = known + 1
         if group[full] then grouped = grouped + 1 end
     end

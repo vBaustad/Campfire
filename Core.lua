@@ -193,7 +193,7 @@ local function Neighbours()
     if not myZone then return false end
     local n = 0
     local me = LIB.Me()
-    for full, p in pairs(CF.peers) do
+    for full, p in pairs(CF.LivePeers()) do
         -- Never count ourselves: a phantom neighbour at zero yards would keep us in the fast
         -- sending mode for ever, for every user.
         if full ~= me and not p.hidden and CF.ZoneOf(p.map) == myZone then n = n + 1 end
@@ -245,7 +245,7 @@ end
 function CF.MakeRoom(sender)
     if CF.peers[sender] then return true end
     local n, oldest, oldestAt = 0, nil, math.huge
-    for full, p in pairs(CF.peers) do
+    for full, p in pairs(CF.LivePeers()) do
         n = n + 1
         -- Players outside the guild go first, then whoever we heard from longest ago.
         local age = p.seen - (p.open and 0 or 1e6)
@@ -381,7 +381,21 @@ end
 
 local function Expired(full, p, now)
     if p.open then return now - p.seen > (CF.OPEN_STALE or STALE) end
+    -- Nobody sends an "X" when they log out; they just go quiet. So a guildie who is no longer
+    -- online is gone even if we heard from them a moment ago.
     return now - p.seen > STALE or (LIB.rosterReady and not LIB.IsOnline(full))
+end
+
+--- The one place that decides who we still know about: drops everyone stale or logged out, and
+--- hands back CF.peers itself. EVERY consumer goes through this - the window, the map, the status
+--- lines - so there is never a second expiry rule to forget. The map used to walk CF.peers on its
+--- own, which is why players who had logged out stayed on it.
+function CF.LivePeers()
+    local now = GetTime()
+    for full, p in pairs(CF.peers) do
+        if Expired(full, p, now) then CF.peers[full] = nil end
+    end
+    return CF.peers
 end
 
 --- Players running Campfire, nearest first: { full, peer, yards, dir, sameZone }.
@@ -397,18 +411,14 @@ function CF.Nearby()
     local zoneOnly = CF.db and CF.db.zoneOnly
     local now = GetTime()
     local list, elsewhere = {}, 0
-    for full, p in pairs(CF.peers) do
-        if Expired(full, p, now) then
-            CF.peers[full] = nil
+    for full, p in pairs(CF.LivePeers()) do
+        local same = not p.hidden and myZone ~= nil and CF.ZoneOf(p.map) == myZone
+        if zoneOnly and not same then
+            elsewhere = elsewhere + 1
         else
-            local same = not p.hidden and myZone ~= nil and CF.ZoneOf(p.map) == myZone
-            if zoneOnly and not same then
-                elsewhere = elsewhere + 1
-            else
-                local yards = (map and not p.hidden) and LIB.Distance(map, x, y, p.map, p.x, p.y) or nil
-                list[#list + 1] = { full = full, peer = p, yards = yards, sameZone = same,
-                    dir = yards and Direction(map, x, y, p) }
-            end
+            local yards = (map and not p.hidden) and LIB.Distance(map, x, y, p.map, p.x, p.y) or nil
+            list[#list + 1] = { full = full, peer = p, yards = yards, sameZone = same,
+                dir = yards and Direction(map, x, y, p) }
         end
     end
     table.sort(list, function(l, r)
@@ -645,7 +655,7 @@ SlashCmdList.CAMPFIRE = function(msg)
         local fast, inZone = Neighbours()
         print(("  neighbours in zone: %s, fast sending: %s"):format(tostring(inZone), tostring(fast)))
         if CF.OpenDebug then CF.OpenDebug() end
-        for full, p in pairs(CF.peers) do
+        for full, p in pairs(CF.LivePeers()) do
             print(("  %s%s: %s, seen %ds ago"):format(full, p.open and " (open)" or "", p.hidden and "hidden" or
                 ("map %d (zone %s) %.4f %.4f %s"):format(p.map, tostring(CF.ZoneOf(p.map)), p.x, p.y,
                     tostring(p.sub)), GetTime() - p.seen))

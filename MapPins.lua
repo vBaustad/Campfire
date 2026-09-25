@@ -147,7 +147,9 @@ local function NewProvider()
         local group = CF.GroupMembers()
         local myMap, myX, myY = LIB.MyPosition()
         local draw, inGroup = {}, 0
-        for full, p in pairs(CF.peers) do
+        -- CF.LivePeers, not CF.peers: the expiry rule (stale, or logged out) lives in one place, and
+        -- reading the raw table is how logged-out guildies stayed on the map.
+        for full, p in pairs(CF.LivePeers()) do
             if group[full] then inGroup = inGroup + 1 end
             -- No dot for anyone indoors or in an instance: they have no position to show.
             if not p.hidden and not group[full] and not (guildOnly and p.open)

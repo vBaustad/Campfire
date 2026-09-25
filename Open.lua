@@ -167,7 +167,8 @@ end
 
 local function OpenCount()
     local n = 0
-    for _, p in pairs(CF.peers) do if p.open then n = n + 1 end end
+    -- LivePeers first, so a stranger who went quiet does not hold a slot against the cap.
+    for _, p in pairs(CF.LivePeers()) do if p.open then n = n + 1 end end
     return n
 end
 

@@ -12,7 +12,7 @@ local NEEDED = {
     "WhisperName", "Whisper", "SendPosition", "IsSelf", "NoteSent", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
     "SetHidden", "SetShowAllZones", "SetMapPins", "SetMapZoneOnly", "SetMapGuildOnly", "StatusText", "ShortStatus",
     "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions", "RegisterIntro",
-    "GroupMembers", "GroupKey", "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
+    "GroupMembers", "GroupKey", "LivePeers", "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
     "OpenHiddenChanged", "OpenDebug", "Say",
 }
 
@@ -127,6 +127,17 @@ local function Run()
     if CF.ValidPosition(here, 1.5, 0.5) then return false, "ValidPosition() accepts coordinates off the map" end
     if not CF.ValidPosition(here, 0.5, 0.5) then return false, "ValidPosition() rejects a real position" end
     checked = checked + 3
+
+    -- Someone we stopped hearing from must disappear everywhere, not just from the window: the map
+    -- used to read CF.peers raw, which is how guildies who had logged out stayed on it.
+    local ghost = "Selftest Ghost-" .. (LIB.Realm() or "Realm")
+    CF.peers[ghost] = { map = here, x = 0.5, y = 0.5, seen = GetTime() - 99999, open = true }
+    CF.LivePeers()
+    if CF.peers[ghost] then
+        CF.peers[ghost] = nil
+        return false, "LivePeers() keeps a peer we stopped hearing from"
+    end
+    checked = checked + 1
 
     -- The map provider, against whichever maps are open (usually none, which is also a case).
     CF.RefreshMapPins()
