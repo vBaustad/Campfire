@@ -271,7 +271,6 @@ local function OnMessage(_, text, dist, sender)
     -- Before anything else, and for every kind of message: an "X" of ours coming back would remove
     -- us again, which is what made this come and go instead of staying broken.
     if CF.IsSelf(sender, text) then return end
-    cached = nil    -- peers changed; the next Nearby() rebuilds
     -- LibForever only passes on guild messages and whispers from guildies.
     local kind, proto, a, b, c, sub, level, class = strsplit(";", text)
     if tonumber(proto) ~= PROTO then return end
@@ -403,6 +402,12 @@ end
 --- The window, the status line, the tooltips and the map all ask for this, several times a second,
 --- so the answer is kept for a moment instead of walking every peer each time.
 local cached, cachedAt, cachedElsewhere = nil, -1, 0
+-- Dropped from one place: everything that changes CF.peers fires CAMPFIRE_PEERS, here and in
+-- Open.lua, and a setting that changes who is listed fires it too. OnMessage used to clear the
+-- cache itself, a hundred lines ABOVE this declaration - where the local does not exist yet, so it
+-- wrote a global and the real cache was never dropped. A listener cannot be written above the
+-- thing it clears, which is why the invalidation lives here and not at the call sites.
+LIB.Listen("CAMPFIRE_PEERS", function() cached = nil end)
 function CF.Nearby()
     local now = GetTime()
     if cached and now - cachedAt < 0.25 then return cached, cachedElsewhere end

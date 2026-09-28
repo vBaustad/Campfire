@@ -2,7 +2,9 @@
 -- After a cleanup round the usual bug is something deleted but still called, so this walks the paths
 -- that only run on a click or a command: the list and its rows, the status lines, the empty-window
 -- text, the map provider, and the debug commands (including the camp probe, which is no longer in
--- the TOC). It only reads: nothing here sends a message, joins a channel or changes a setting.
+-- the TOC). Nothing here sends a message, joins a channel or changes a setting. It does add a
+-- player to CF.peers and take them out again, firing CAMPFIRE_PEERS both times, which is the
+-- only way to prove from inside that the list notices a change.
 local ADDON, CF = ...
 local LIB = LibStub("LibForever-1.0")
 
@@ -136,6 +138,22 @@ local function Run()
     if CF.peers[ghost] then
         CF.peers[ghost] = nil
         return false, "LivePeers() keeps a peer we stopped hearing from"
+    end
+    checked = checked + 1
+
+    -- ...and a peer we HAVE just heard from must reach the list straight away. CF.Nearby() keeps
+    -- its answer for a quarter second, and the line that dropped that cache when a message arrived
+    -- sat above the cache's own declaration, so it wrote a global and the cache stayed put.
+    local fresh = "Selftest Fresh-" .. (LIB.Realm() or "Realm")
+    local list0, else0 = CF.Nearby()
+    local before = #list0 + else0
+    CF.peers[fresh] = { map = here, x = 0.5, y = 0.5, seen = GetTime(), open = true }
+    LIB.Fire("CAMPFIRE_PEERS")
+    local list1, else1 = CF.Nearby()
+    CF.peers[fresh] = nil
+    LIB.Fire("CAMPFIRE_PEERS")
+    if #list1 + else1 ~= before + 1 then
+        return false, "a peer we just heard from did not reach Nearby(): its cache was not dropped"
     end
     checked = checked + 1
 
