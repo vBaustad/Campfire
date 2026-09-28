@@ -1,6 +1,6 @@
 # Campfire
 
-## Unreleased
+## 0.1.0-beta7
 
 - **Guildies who log out leave the map.** Their dot used to stay where they were standing and sit there for as long as you kept the map open. The window already knew to forget someone who had gone quiet; the map did not. Both follow the same rule now, so the dot goes as soon as the guild roster says they're offline.
 - **You no longer show up as a player near yourself.** Your own messages come back to you, and the check that should drop them went by name - which failed whenever your own surname was hidden from you, so you were stored as a player like any other and drawn on the map and in the window. The check doesn't go by name any more. It was costing everyone else as well: with yourself in the list Campfire thought someone was standing next to you and sent your position three times as often as it needed to.
