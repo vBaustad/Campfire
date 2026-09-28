@@ -130,7 +130,7 @@ local function NewProvider()
 
     function provider:RefreshAllData()
         self:RemoveAllData()
-        CF.mapHidden, CF.mapInGroup = 0, 0
+        CF.mapHidden = 0
         if not CF.MapPinsEnabled() or not next(CF.peers) then return end
         local map = self:GetMap()
         local mapID = map:GetMapID()
@@ -146,11 +146,10 @@ local function NewProvider()
         -- top of theirs only makes both harder to click. They stay in the window's list.
         local group = CF.GroupMembers()
         local myMap, myX, myY = LIB.MyPosition()
-        local draw, inGroup = {}, 0
+        local draw = {}
         -- CF.LivePeers, not CF.peers: the expiry rule (stale, or logged out) lives in one place, and
         -- reading the raw table is how logged-out guildies stayed on the map.
         for full, p in pairs(CF.LivePeers()) do
-            if group[full] then inGroup = inGroup + 1 end
             -- No dot for anyone indoors or in an instance: they have no position to show.
             if not p.hidden and not group[full] and not (guildOnly and p.open)
                 and not (zoneOnly and CF.ZoneOf(p.map) ~= shownZone) then
@@ -161,7 +160,6 @@ local function NewProvider()
                 end
             end
         end
-        CF.mapInGroup = inGroup
         -- Nearest first, so the cap drops the far-away ones.
         table.sort(draw, function(l, r) return l.yards < r.yards end)
         for i, d in ipairs(draw) do
