@@ -6,6 +6,7 @@
 - **You no longer show up as a player near yourself.** Your own messages come back to you, and the check that should drop them went by name - which failed whenever your own surname was hidden from you, so you were stored as a player like any other and drawn on the map and in the window. The check doesn't go by name any more. It was costing everyone else as well: with yourself in the list Campfire thought someone was standing next to you and sent your position three times as often as it needed to.
 - **No Campfire dot on top of your party and raid.** The game draws them for you, so two dots fought over the same spot and hovering picked one of them at random. Campfire is meant to leave them to the game, but the check never matched anyone: it read a Forever surname as a realm name, so "Duplo Bonk" in your group and "Duplo Bonk" on the map looked like two different players. It reads your group properly now, and the dot comes back when the group breaks up. They stay in the Campfire window either way - it is only the map dot that steps aside.
 - **Whispers reach the player you clicked.** Clicking a name opened a whisper to the first name only and sent the surname as the message.
+- **"Show all zones" changes the list as you tick it.** It used to show you the previous list for a moment first.
 
 ## 0.1.0-beta6
 
