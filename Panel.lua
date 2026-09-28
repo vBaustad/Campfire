@@ -10,17 +10,11 @@ local win
 function CF.EmptyText(elsewhere)
     local open = CF.OpenActive and CF.OpenActive()
     local inGuild = IsInGuild()
-    -- Everyone we know is in your group: the game draws them for you, so Campfire looks empty on
-    -- purpose. Say that, rather than leaving it looking broken.
-    local group, known, grouped = CF.GroupMembers(), 0, 0
-    for full in pairs(CF.LivePeers()) do
-        known = known + 1
-        if group[full] then grouped = grouped + 1 end
-    end
-    if known > 0 and known == grouped then
-        return ("Everyone Campfire can see is in your group.\n\nThe game already shows %s on the map, so "
-            .. "Campfire leaves the dots off to keep them clickable."):format(grouped == 1 and "them" or "them all")
-    end
+    -- No "everyone you can see is in your group" line here. Group members are left off the MAP,
+    -- but they stay in this list, so they can never be the reason it is empty. With "Show all
+    -- zones" on the branch was unreachable; with it off it fired only when they were all in
+    -- another zone, and then claimed the game was drawing them on a map they are not on, in place
+    -- of the zone line below - which is both the real reason and a true one.
     local tick = "Tick \"Also share with other Campfire players on my faction\" in the settings"
     if not inGuild and not open then
         if CF.db.hidden then
