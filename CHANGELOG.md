@@ -1,7 +1,12 @@
 # Campfire
 
-## 0.1.0-beta8
+## Unreleased
 
+- **A campfire that tells you where you stand with camps.** With nothing going on it's a grey fire with "No camp benefit" under it. Walk into range of a camp and it lights up - "Campfire nearby". Settle in at one and it says so while the buff comes. Once you have the benefit it stops talking altogether: the flames keep their colour only down to the time you have left, so the fire burns out from the tips as the hour goes, with the time under it and what you're getting under that - "Strength +6", coloured by stat and read from the buff itself.
+- **It stays with the buff, not the fire.** Camp Benefits runs an hour, and that's the hour you want to watch it, so it follows you away from the camp instead of vanishing the moment you walk off.
+- Drag it where you want with `/campfire camp unlock`, turn it off with `/campfire camp`, or find all of it in the settings - including whether the grey fire sits there at all when there's nothing to say. The game doesn't tell addons where a camp is, only that one is near, so there's no arrow and no distance. Buffs can't be read in combat, so during a fight it dims to say it's showing what it last saw rather than claiming you've lost anything.
+
+## 0.1.0-beta8
 
 - **One way in: the settings.** The YippYapp welcome window is gone, and Campfire's page in it with it. Everything that page explained is now at the bottom of Campfire's own settings, under its own headings, next to the switches it talks about. The YippYapp launcher bar is gone too.
 - **"Show Campfire in the YippYapp minimap button."** YippYapp addons now always share one minimap button, so the only thing left to choose is whether Campfire is one of the icons behind it. That choice is in Campfire's settings.

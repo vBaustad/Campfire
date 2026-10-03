@@ -33,8 +33,13 @@ CF.PROTO = PROTO
 -- mapPins: a dot per player on the world map and the zone map (MapPins.lua).
 -- mapGuildOnly: only guildies get a dot. With strangers left out there is no crowd to fear, so...
 -- mapZoneOnly: ...this starts off, and the whole continent can be shown at once.
+-- camp: the campfire icon while a camp is near (Camp.lua). campList: what it has given you, under
+--   the icon, with the time left. campLocked: unlocked shows a preview you can drag.
+-- campAlways: keep the grey fire on screen away from camps too, as a resting state. On by default;
+--   untick it and the HUD turns up only when a camp or its buff is involved.
 local defaults = { hidden = false, zoneOnly = true, openShare = true, mapPins = true,
-    mapGuildOnly = true, mapZoneOnly = false }
+    mapGuildOnly = true, mapZoneOnly = false, camp = true, campList = true, campLocked = true,
+    campAlways = true }
 local migrations = {
     -- 2: openShare became opt-out (it was off by default in the first test builds).
     [2] = function(db) db.openShare = true end,
@@ -622,6 +627,16 @@ SlashCmdList.CAMPFIRE = function(msg)
     elseif cmd == "hide" or cmd == "share" then
         CF.SetHidden(not CF.db.hidden)
         print(TAG .. ": " .. (CF.db.hidden and "your position is hidden." or "sharing your position again."))
+    elseif cmd == "camp" then
+        CF.SetCampIcon(not CF.db.camp)
+        print(TAG .. ": the campfire icon is " .. (CF.db.camp and "on." or "off."))
+    elseif cmd == "camp always" or cmd == "camp remind" then
+        CF.SetCampAlways(not CF.db.campAlways)
+        print(TAG .. ": the resting campfire icon is " .. (CF.db.campAlways and "on." or "off."))
+    elseif cmd == "camp lock" or cmd == "camp unlock" then
+        CF.SetCampLocked(not CF.db.campLocked)
+        print(TAG .. ": the campfire icon is " .. (CF.db.campLocked and "locked."
+            or "unlocked - drag the preview where you want it."))
     elseif cmd == "options" or cmd == "settings" then
         CF.OpenOptions()
     elseif cmd == "selftest" then
@@ -651,6 +666,30 @@ SlashCmdList.CAMPFIRE = function(msg)
         end
         local fast, inZone = Neighbours()
         print(("  neighbours in zone: %s, fast sending: %s"):format(tostring(inZone), tostring(fast)))
+        -- The camp HUD reads our OWN auras, so when it shows nothing this is the only way to tell
+        -- "no camp near" apart from "a camp that gives no aura we can see".
+        if CF.CampState then
+            local camp, campStale = CF.CampState()
+            print(("  camp: nearby %s, benefits %s, carrying %s - reading is %s"):format(
+                tostring(camp.nearby), tostring(camp.benefits), tostring(camp.carrying),
+                campStale and "STALE (auras are secret right now)" or "current"))
+            for _, b in ipairs(camp.buffs) do
+                print(("    %d %s%s"):format(b.id, tostring(b.name),
+                    b.expires and (" - %ds left"):format(b.expires - GetTime()) or ""))
+                -- The stats live only in the buff's own tooltip, so when the HUD shows none this
+                -- says whether the client handed us the text at all. CleanText because a tooltip
+                -- line is full of |4 and |c markup that chat would try to render.
+                if b.index and CF.CampTooltipLines then
+                    local lines, why, rights = CF.CampTooltipLines(b.index)
+                    if why then print("      tooltip: " .. why) end
+                    for i, text in ipairs(lines) do
+                        local right = rights and rights[i]
+                        print(("      [%d] %s%s"):format(i, CF.CleanText(text),
+                            right and ("   >> " .. CF.CleanText(right)) or ""))
+                    end
+                end
+            end
+        end
         if CF.OpenDebug then CF.OpenDebug() end
         for full, p in pairs(CF.LivePeers()) do
             print(("  %s%s: %s, seen %ds ago"):format(full, p.open and " (open)" or "", p.hidden and "hidden" or
@@ -662,6 +701,10 @@ SlashCmdList.CAMPFIRE = function(msg)
         print("  /campfire  - open the window: players with Campfire near you")
         print("  /campfire list  - the same list in chat")
         print("  /campfire hide  - hide your position / share it again (now " .. (CF.db.hidden and "hidden" or "shared") .. ")")
+        print("  /campfire camp  - the campfire icon when a camp is near (now " .. (CF.db.camp and "on" or "off") .. ")")
+        print("  /campfire camp unlock  - drag that icon where you want it")
+        print("  /campfire camp always  - keep the grey fire on screen away from camps (now "
+            .. (CF.db.campAlways and "on" or "off") .. ")")
         print("  /campfire options  - open the settings")
     end
 end
@@ -677,6 +720,7 @@ LIB.On("PLAYER_LOGIN", function()
     DefaultMapPins()
     CF.RegisterOptions()
     if CF.StartMapPins then CF.StartMapPins() end
+    if CF.StartCamp then CF.StartCamp() end
     C_Timer.After(5, function()
         Send(("Q;%d"):format(PROTO))
         CF.SendPosition("login")

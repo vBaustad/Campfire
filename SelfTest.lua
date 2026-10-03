@@ -16,9 +16,12 @@ local NEEDED = {
     "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions",
     "GroupMembers", "GroupKey", "LivePeers", "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
     "OpenHiddenChanged", "OpenDebug", "Say",
+    "CampState", "RefreshCamp", "StartCamp", "SetCampIcon", "SetCampList", "SetCampLocked",
+    "SetCampAlways", "CampLines", "CampStats", "StatColor", "CampFraction", "CampTooltipLines",
 }
 
-local SETTINGS = { "hidden", "zoneOnly", "openShare", "mapPins", "mapGuildOnly", "mapZoneOnly" }
+local SETTINGS = { "hidden", "zoneOnly", "openShare", "mapPins", "mapGuildOnly", "mapZoneOnly",
+    "camp", "campList", "campLocked", "campAlways" }
 
 --- A row that isn't in CF.peers, so the row builder is exercised even with nobody around.
 local function FakeEntry()
@@ -161,6 +164,122 @@ local function Run()
     CF.RefreshMapPins()
     checked = checked + 1
 
+    -- The camp HUD reads our own auras, which is a different kind of risk from everything above:
+    -- in combat they are all secret, and the whole point is that "could not look" is not the same
+    -- answer as "you have not got it". So the state must survive a read that cannot happen.
+    CF.RefreshCamp()
+    local camp, campStale = CF.CampState()
+    if type(camp) ~= "table" or type(camp.buffs) ~= "table" then
+        return false, "CampState() returned nothing usable"
+    end
+    if camp.nearby == nil or camp.benefits == nil or camp.carrying == nil then
+        return false, "CampState() left nearby/benefits/carrying nil, which the HUD reads as false"
+    end
+    -- An hour-long camp buff must keep the HUD up after you have walked away from the fire; only
+    -- 1283391 means "in range", and every other camp aura is one you carry off with you.
+    if camp.carrying and #camp.buffs == 0 then
+        return false, "CampState() says we are carrying camp buffs but lists none"
+    end
+    if type(campStale) ~= "boolean" then
+        return false, "CampState() does not say whether its answer is current"
+    end
+    -- Out of combat the reading must actually have worked; in combat it must say so instead.
+    if not campStale and InCombatLockdown() then
+        return false, "the camp state calls itself current while auras are secret"
+    end
+    for _, b in ipairs(camp.buffs) do
+        if not b.id then return false, "a camp buff came back without a spell id" end
+        checked = checked + 1
+    end
+
+    -- One line, and only when there is something to do about it. Each of these was a state the
+    -- HUD used to talk through: standing at a fire, settled at one, and carrying the buff away.
+    local function Line(t) return CF.CampLines(t) or "-" end
+    if Line({ nearby = true, benefits = false, settled = false }) ~= "Campfire nearby" then
+        return false, "CampLines() doesn't say a camp is near when one is"
+    end
+    if Line({ nearby = true, benefits = false, settled = true }) == "Campfire nearby" then
+        return false, "CampLines() says the same thing settled at a fire as walking past one"
+    end
+    if Line({ nearby = true, benefits = true, settled = true }) ~= "-" then
+        return false, "CampLines() still talks once you have the benefit, where the timer says it"
+    end
+    -- The resting state still says something - a grey fire with nothing under it reads as broken -
+    -- but what it says is about YOUR buff, never about the world. Claiming no camp is near would be
+    -- a guess: one aura means "in range", and not having it is not proof.
+    local resting = Line({ nearby = false, benefits = false, settled = false })
+    if resting == "-" then
+        return false, "CampLines() leaves the resting state with no line at all"
+    end
+    if resting:lower():find("nearby") then
+        return false, "CampLines() claims something about camps nearby when it cannot know"
+    end
+    checked = checked + 5
+
+    -- The stats exist nowhere but the buff's own tooltip. This is the real line off a camp, and it
+    -- has to come out as a stat and a number rather than as a sentence.
+    local parsed = CF.CampStats("Sharpening Wheel: Strength increased by 6.")
+    if #parsed ~= 1 or parsed[1].label ~= "Strength" or parsed[1].value ~= "+6" then
+        return false, "CampStats() no longer reads 'Sharpening Wheel: Strength increased by 6.'"
+    end
+    -- Only the stat reaches the screen, whatever sentence the game wrapped it in - the row is one
+    -- line on a HUD, and the full text is still in the buff's own tooltip.
+    local shapes = {
+        { "Camp: Increases your Stamina by 12.", "Stamina", "+12" },
+        { "Camp: +9 Agility", "Agility", "+9" },
+        { "Camp: Attack Power increased by 20.", "Attack Power", "+20" },
+        { "Camp: Critical Strike increased by 3.", "Crit", "+3" },
+        { "Camp: Haste Rating increased by 5.", "Haste", "+5" },
+    }
+    for _, case in ipairs(shapes) do
+        local got = CF.CampStats(case[1])
+        if #got ~= 1 or got[1].label ~= case[2] or got[1].value ~= case[3] then
+            return false, ("CampStats(%q) gives %s %s, not %s %s"):format(case[1],
+                tostring(got[1] and got[1].label), tostring(got[1] and got[1].value), case[2], case[3])
+        end
+        checked = checked + 1
+    end
+    -- The camp's description arrives as ONE tooltip line: a header, a blank line, then the
+    -- benefit. Flattening that merged the header onto the stat and put the station in front of it,
+    -- which is how "Sharpening Wheel: Stre..." reached the screen instead of "Strength".
+    local merged = CF.CampStats("Gained the following camp benefits:\n\nSharpening Wheel: Strength increased by 6.")
+    if #merged ~= 1 or merged[1].label ~= "Strength" or merged[1].value ~= "+6" then
+        return false, "CampStats() keeps the station name when the header shares the benefit's line"
+    end
+    checked = checked + 1
+
+    -- A shape we have never seen must still put the stat's NAME on screen, not the whole sentence.
+    local odd = CF.CampStats("Some Station: Dodge goes up a bit somehow")
+    if #odd ~= 1 or odd[1].label ~= "Dodge" then
+        return false, "CampStats() prints a sentence it can't parse instead of the stat's name"
+    end
+    if #CF.CampStats(nil) ~= 0 then return false, "CampStats() invents stats out of nothing" end
+    -- WoW's own pluralisation markup carries a COLON - "60 |4minute:minutes; remaining" - and the
+    -- rule that recognises a stat looks for a colon. That line reached the screen once, as
+    -- "minutes; remaining", which is what this stops happening again.
+    if #CF.CampStats("60 |4minute:minutes; remaining") ~= 0 then
+        return false, "CampStats() reads WoW's plural markup as a stat"
+    end
+    if CF.StatColor("Strength") == CF.StatColor("Intellect") then
+        return false, "StatColor() gives every stat the same colour"
+    end
+
+    -- The whole look hangs off this one number now: the fire keeps its colour up to the fraction
+    -- left and goes grey above it. A sign error here would be a fire that relights itself.
+    local now = GetTime()
+    if CF.CampFraction({ expires = now + 1800, duration = 3600 }) > 0.6 then
+        return false, "CampFraction() says a half-spent buff is more than half left"
+    end
+    if CF.CampFraction({ expires = now - 10, duration = 3600 }) ~= 0 then
+        return false, "CampFraction() gives a finished buff something left"
+    end
+    if CF.CampFraction({ expires = now + 7200, duration = 3600 }) ~= 1 then
+        return false, "CampFraction() goes over a full bar"
+    end
+    if CF.CampFraction(nil) ~= nil or CF.CampFraction({ duration = 0 }) ~= nil then
+        return false, "CampFraction() invents a fraction for a buff with no timer"
+    end
+    checked = checked + 12
 
     -- The commands. The camp probe is no longer in the TOC, so this is the path that must answer
     -- politely instead of calling something that isn't there.

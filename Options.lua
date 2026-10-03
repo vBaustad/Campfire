@@ -44,10 +44,14 @@ local HELP = {
       "Click the Campfire icon on the minimap - behind the YippYapp button, with the other YippYapp "
       .. "addons - or type /campfire. Click a player in the list to whisper them. Right-click the icon "
       .. "for these settings." },
+    { "Camps",
+      "Separately from all of that, Campfire watches for wilderness camps and shows a small campfire "
+      .. "icon when one is near or when you're carrying its benefit. The game tells addons that a camp "
+      .. "is within about 100 yards, but never where it is, so there's no arrow and no distance." },
 }
 
 local PAGE_WIDTH = 572   -- the YippYapp window's inner width
-local PAGE_HEIGHT = 560  -- the lib scrolls the page when this is taller than the window's room
+local PAGE_HEIGHT = 840  -- the lib scrolls the page when this is taller than the window's room
 
 function CF.RegisterOptions()
     if category then return end
@@ -118,10 +122,36 @@ function CF.RegisterOptions()
         .. "40 dots are drawn at once, nearest first - a safety net that guild-only rarely reaches.")
     mapZoneNote:SetPoint("TOPLEFT", mapZone, "BOTTOMLEFT", 30, -2)
 
+    -- The camp HUD, which has nothing to do with other players: it reads your own auras.
+    local hCamp = Heading(f, "Camps")
+    hCamp:SetPoint("TOPLEFT", mapZoneNote, "BOTTOMLEFT", -26, -20)
+    local camp = Check(hCamp, -4, -6, "Show a campfire icon when a camp is near", CF.SetCampIcon)
+    local campNote = Note(f, "On by default, and only on screen while a camp is within about 100 yards. "
+        .. "The icon is full colour while you have the camp's benefit and grey while you don't. The game "
+        .. "doesn't tell addons where a camp is, only that one is near, so there's no arrow and no distance.")
+    campNote:SetPoint("TOPLEFT", camp, "BOTTOMLEFT", 30, -2)
+
+    local campList = Check(campNote, -30, -12, "List what the camp gives you, with the time left", CF.SetCampList)
+    local campListNote = Note(f, "Under the icon: each buff the camp has given you and how long it has "
+        .. "left. Untick for the icon on its own. Buffs can't be read in combat, so during a fight the "
+        .. "whole thing dims to say it's showing what it last saw.")
+    campListNote:SetPoint("TOPLEFT", campList, "BOTTOMLEFT", 30, -2)
+
+    local campAlways = Check(campListNote, -30, -12, "Keep the campfire icon on screen away from camps",
+        CF.SetCampAlways)
+    local campAlwaysNote = Note(f, "On by default. With nothing going on it's just the grey fire, no "
+        .. "text. Untick and the icon turns up only when a camp is near or its buff is running.")
+    campAlwaysNote:SetPoint("TOPLEFT", campAlways, "BOTTOMLEFT", 30, -2)
+
+    local campLock = Check(campAlwaysNote, -30, -12, "Lock the campfire icon in place", CF.SetCampLocked)
+    local campLockNote = Note(f, "On by default. Untick and the icon appears wherever you are, as a "
+        .. "preview with a blue edge, so you can drag it where you want it. |cffffd100/campfire camp unlock|r "
+        .. "does the same.")
+    campLockNote:SetPoint("TOPLEFT", campLock, "BOTTOMLEFT", 30, -2)
 
     -- Grouping is fixed on now, so the only choice left is whether Campfire is in that row at all.
     local hMini = Heading(f, "Minimap")
-    hMini:SetPoint("TOPLEFT", mapZoneNote, "BOTTOMLEFT", -26, -20)
+    hMini:SetPoint("TOPLEFT", campLockNote, "BOTTOMLEFT", -26, -20)
     local mini = Check(hMini, -4, -6, "Show Campfire in the YippYapp minimap button", function(on)
         if LIB.SetMinimapButtonShown then LIB.SetMinimapButtonShown("Campfire", on) end
     end)
@@ -133,7 +163,8 @@ function CF.RegisterOptions()
     local h2 = Heading(f, "Commands")
     h2:SetPoint("TOPLEFT", miniNote, "BOTTOMLEFT", -26, -20)
     local cmds = Note(f, "|cffffd100/campfire|r opens the window: players with Campfire, nearest first. Click a name to whisper them.\n"
-        .. "|cffffd100/campfire hide|r hides your position or shares it again.  |cffffd100/campfire list|r prints the same list in chat.")
+        .. "|cffffd100/campfire hide|r hides your position or shares it again.  |cffffd100/campfire list|r prints the same list in chat.\n"
+        .. "|cffffd100/campfire camp|r turns the campfire icon on or off.")
     cmds:SetPoint("TOPLEFT", h2, "BOTTOMLEFT", 0, -8)
 
     -- The footer is re-anchored under the help text in Refresh, once there is a help text to be
@@ -152,6 +183,10 @@ function CF.RegisterOptions()
         mapPins:SetChecked(CF.db.mapPins)
         mapGuild:SetChecked(CF.db.mapGuildOnly)
         mapZone:SetChecked(CF.db.mapZoneOnly)
+        camp:SetChecked(CF.db.camp)
+        campList:SetChecked(CF.db.campList)
+        campAlways:SetChecked(CF.db.campAlways)
+        campLock:SetChecked(CF.db.campLocked)
         -- nil reads as shown: a button nobody has hidden is on.
         if LIB.IsMinimapButtonShown then
             mini:SetChecked(LIB.IsMinimapButtonShown("Campfire") ~= false)
