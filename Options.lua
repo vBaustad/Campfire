@@ -25,6 +25,27 @@ local function Note(parent, text)
     return fs
 end
 
+-- What used to be Campfire's page in the YippYapp welcome window. The window is gone; the text is
+-- the same text, at the bottom of this page, where the settings it describes are. The checkbox and
+-- the "Open Campfire" button that sat among these sections did not come with it: both already exist
+-- above, and a second copy is a second thing to keep in step.
+local HELP = {
+    { "What it does",
+      "Campfire shows which players are in your zone and where: your guildies and other Campfire "
+      .. "players on your faction. You see the spot they're at (\"Goldshire\"), their level and class, "
+      .. "and which way and how far. Handy for meeting up or grouping for a quest." },
+    { "How it works",
+      "Everyone who runs Campfire shares their own position with the guild, over the guild addon "
+      .. "channel. Only players who also run Campfire can see it, and you still see theirs if you turn "
+      .. "yours off. Your position is shared while Campfire is on - tick \"Hide my position\" above to "
+      .. "stop. Other Campfire players on your faction see you too; untick that above to share with "
+      .. "your guild only." },
+    { "Where to find it",
+      "Click the Campfire icon on the minimap - behind the YippYapp button, with the other YippYapp "
+      .. "addons - or type /campfire. Click a player in the list to whisper them. Right-click the icon "
+      .. "for these settings." },
+}
+
 local PAGE_WIDTH = 572   -- the YippYapp window's inner width
 local PAGE_HEIGHT = 560  -- the lib scrolls the page when this is taller than the window's room
 
@@ -97,24 +118,28 @@ function CF.RegisterOptions()
         .. "40 dots are drawn at once, nearest first - a safety net that guild-only rarely reaches.")
     mapZoneNote:SetPoint("TOPLEFT", mapZone, "BOTTOMLEFT", 30, -2)
 
+
+    -- Grouping is fixed on now, so the only choice left is whether Campfire is in that row at all.
+    local hMini = Heading(f, "Minimap")
+    hMini:SetPoint("TOPLEFT", mapZoneNote, "BOTTOMLEFT", -26, -20)
+    local mini = Check(hMini, -4, -6, "Show Campfire in the YippYapp minimap button", function(on)
+        if LIB.SetMinimapButtonShown then LIB.SetMinimapButtonShown("Campfire", on) end
+    end)
+    local miniNote = Note(f, "On by default. YippYapp addons share one minimap button; this is whether "
+        .. "Campfire is one of the icons behind it. Left-click opens Campfire, right-click these settings.")
+    miniNote:SetPoint("TOPLEFT", mini, "BOTTOMLEFT", 30, -2)
+
     -- Where to find the window.
     local h2 = Heading(f, "Commands")
-    h2:SetPoint("TOPLEFT", mapZoneNote, "BOTTOMLEFT", -26, -20)
+    h2:SetPoint("TOPLEFT", miniNote, "BOTTOMLEFT", -26, -20)
     local cmds = Note(f, "|cffffd100/campfire|r opens the window: players with Campfire, nearest first. Click a name to whisper them.\n"
         .. "|cffffd100/campfire hide|r hides your position or shares it again.  |cffffd100/campfire list|r prints the same list in chat.")
     cmds:SetPoint("TOPLEFT", h2, "BOTTOMLEFT", 0, -8)
 
-    -- Bottom: the link to the shared YippYapp page, then the YippYapp line. No welcome button here:
-    -- the YippYapp window has its own way to the welcome page.
-    local anchor, gap = cmds, -20
-    if LIB.LauncherOptions then
-        local links = LIB.LauncherOptions(f, "Campfire")
-        links:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, gap)
-        anchor, gap = links, -20
-    end
-
+    -- The footer is re-anchored under the help text in Refresh, once there is a help text to be
+    -- under. This point is only so it has one before the first real layout.
     local footer = f:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-    footer:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, gap)
+    footer:SetPoint("TOPLEFT", cmds, "BOTTOMLEFT", 0, -20)
     footer:SetJustifyH("LEFT")
     footer:SetText("Part of YippYapp - addons for WoW: Forever that work even better together.")
 
@@ -127,6 +152,29 @@ function CF.RegisterOptions()
         mapPins:SetChecked(CF.db.mapPins)
         mapGuild:SetChecked(CF.db.mapGuildOnly)
         mapZone:SetChecked(CF.db.mapZoneOnly)
+        -- nil reads as shown: a button nobody has hidden is on.
+        if LIB.IsMinimapButtonShown then
+            mini:SetChecked(LIB.IsMinimapButtonShown("Campfire") ~= false)
+        end
+
+        -- The help text used to be Campfire's page in the welcome window. It lives at the bottom of
+        -- this page now. There is no running y to put it at - the page is built from relative
+        -- anchors - so it is measured from the last thing on the page, which only works once the
+        -- page has been laid out. GetTop() is nil at build time, so the first real call is this one,
+        -- from OnShow; calling AddHelp again replaces rather than stacks, which is what makes that
+        -- safe to run on every show.
+        --
+        -- Measured from `cmds`, which never moves, and NOT from the footer: the footer is placed
+        -- BELOW the help from the value this returns, so measuring the help from the footer made
+        -- each show push both of them further down the page. That is the hole in the middle.
+        if LIB.AddHelp and panel:GetTop() and cmds:GetBottom() then
+            local y = -(panel:GetTop() - cmds:GetBottom()) - 24
+            local bottom = LIB.AddHelp(panel, HELP, y)
+            footer:ClearAllPoints()
+            footer:SetPoint("TOPLEFT", panel, "TOPLEFT", 18, bottom - 20)
+            -- The page scrolls, so it has to be tall enough to scroll TO the help.
+            panel:SetHeight(math.max(PAGE_HEIGHT, -bottom + 60))
+        end
     end
     -- The lib runs the panel's OnShow every time the page is shown; the rest is belt and braces
     -- for the old Blizzard-hosted path.

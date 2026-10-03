@@ -1,5 +1,11 @@
 # Campfire
 
+## Unreleased
+
+
+- **One way in: the settings.** The YippYapp welcome window is gone, and Campfire's page in it with it. Everything that page explained is now at the bottom of Campfire's own settings, under its own headings, next to the switches it talks about. The YippYapp launcher bar is gone too.
+- **"Show Campfire in the YippYapp minimap button."** YippYapp addons now always share one minimap button, so the only thing left to choose is whether Campfire is one of the icons behind it. That choice is in Campfire's settings.
+
 ## 0.1.0-beta7
 
 - **Guildies who log out leave the map.** Their dot used to stay where they were standing and sit there for as long as you kept the map open. The window already knew to forget someone who had gone quiet; the map did not. Both follow the same rule now, so the dot goes as soon as the guild roster says they're offline.

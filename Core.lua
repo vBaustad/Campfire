@@ -490,14 +490,17 @@ function CF.PrintList()
 end
 
 -- ---------------------------------------------------------------------------
--- Hiding, launcher, compartment, slash
+-- Hiding, minimap button, compartment, slash
 -- ---------------------------------------------------------------------------
 --- print(), unless a self-test is running: a test that passes should say nothing but its own line.
 function CF.Say(text)
     if not CF.silent then print(text) end
 end
 
-local function OnLauncherClick(button)
+--- The one click handler behind both ways in: the minimap button and the addon compartment. Named
+--- for the icon rather than the launcher, because the launcher bar is gone and the name was the last
+--- thing claiming otherwise.
+local function OnIconClick(button)
     if button == "RightButton" then CF.OpenOptions() else CF.TogglePanel() end
 end
 
@@ -590,7 +593,7 @@ local function TooltipLines(add)
     add("Right-click: settings", 0.8, 0.8, 0.8)
 end
 
-function Campfire_OnAddonCompartmentClick(_, button) OnLauncherClick(button) end
+function Campfire_OnAddonCompartmentClick(_, button) OnIconClick(button) end
 function Campfire_OnAddonCompartmentEnter(_, menuButton)
     GameTooltip:SetOwner(menuButton, "ANCHOR_LEFT")
     TooltipLines(function(...) GameTooltip:AddLine(...) end)
@@ -598,23 +601,12 @@ function Campfire_OnAddonCompartmentEnter(_, menuButton)
 end
 function Campfire_OnAddonCompartmentLeave() GameTooltip:Hide() end
 
-local function RegisterLauncher()
-    if not LIB.RegisterLauncher then return end
-    LIB.RegisterLauncher({
-        id = "Campfire", label = "Campfire", order = 30,
-        icon = "Interface\\AddOns\\Campfire\\Media\\notch",
-        onClick = OnLauncherClick,
-        status = StatusText,
-        tooltip = { "Left-click: open Campfire", "Right-click: settings" },
-    }, CF.db)
-end
-
 local function RegisterMinimap()
     if not LIB.RegisterMinimapButton then return end
     LIB.RegisterMinimapButton("Campfire", {
         icon = "Interface\\AddOns\\Campfire\\Media\\minimap",
         label = "Campfire",
-        OnClick = function(_, button) OnLauncherClick(button) end,
+        OnClick = function(_, button) OnIconClick(button) end,
         OnTooltipShow = function(tt) TooltipLines(function(...) tt:AddLine(...) end) end,
     }, CF.db)
 end
@@ -681,11 +673,9 @@ LIB.On("PLAYER_LOGIN", function()
     CF.db = LIB.PrepareDB(CampfireDB, defaults, migrations, 4)
     CampfireDB = CF.db
     LIB.RegisterComm(PREFIX, OnMessage)
-    RegisterLauncher()
     RegisterMinimap()
     DefaultMapPins()
     CF.RegisterOptions()
-    CF.RegisterIntro()
     if CF.StartMapPins then CF.StartMapPins() end
     C_Timer.After(5, function()
         Send(("Q;%d"):format(PROTO))

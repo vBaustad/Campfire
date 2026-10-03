@@ -35,5 +35,4 @@ Panel.lua
 MapPins.lua
 MapPins.xml
 # Probe.lua is the camp research probe (/campfire debug camp): not shipped. Add the line back to use it.
-Intro.lua
 SelfTest.lua

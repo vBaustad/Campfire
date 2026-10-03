@@ -13,7 +13,7 @@ local NEEDED = {
     "Sharing", "CleanText", "MySubZone", "AboutMe", "ValidClass", "ValidLevel", "ValidPosition",
     "WhisperName", "Whisper", "SendPosition", "IsSelf", "NoteSent", "MakeRoom", "TooSoon", "ZoneOf", "Nearby", "RowText", "PrintList",
     "SetHidden", "SetShowAllZones", "SetMapPins", "SetMapZoneOnly", "SetMapGuildOnly", "StatusText", "ShortStatus",
-    "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions", "RegisterIntro",
+    "TogglePanel", "OpenPanel", "EmptyText", "OpenOptions", "RegisterOptions",
     "GroupMembers", "GroupKey", "LivePeers", "MapPinsEnabled", "RefreshMapPins", "StartMapPins", "OpenActive", "SetOpenShare",
     "OpenHiddenChanged", "OpenDebug", "Say",
 }
@@ -160,6 +160,7 @@ local function Run()
     -- The map provider, against whichever maps are open (usually none, which is also a case).
     CF.RefreshMapPins()
     checked = checked + 1
+
 
     -- The commands. The camp probe is no longer in the TOC, so this is the path that must answer
     -- politely instead of calling something that isn't there.
