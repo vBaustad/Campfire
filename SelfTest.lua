@@ -248,6 +248,31 @@ local function Run()
     end
     checked = checked + 1
 
+    -- Every station, in Camp Benefits' own text from the game data. The tent read as "You" and the
+    -- fish bowl's "5%" as "All" before; the lute is three stats in one sentence.
+    local stations = {
+        { "Tent: You received a small amount of rest experience. You can only receive this effect once per 1 hr.",
+            { { "Rested XP" } } },
+        { "Mana Well: Restores 40 Mana every 5 seconds.", { { "Mana", "+40/5s" } } },
+        { "Enchanted Lute: Armor increased by 50, all attributes increased by 5, and all resistances increased by 10.",
+            { { "Armor", "+50" }, { "All stats", "+5" }, { "Resistances", "+10" } } },
+        { "Fish Bowl: All stats increased by 5%.", { { "All stats", "+5%" } } },
+        { "Lodestone: Melee Attack Power increased by 12.", { { "Attack Power", "+12" } } },
+        { "Camp Chair: Critical strike chance with all spells and attacks increased by 1%.", { { "Crit", "+1%" } } },
+    }
+    for _, case in ipairs(stations) do
+        local got = CF.CampStats(case[1])
+        local ok = #got == #case[2]
+        for i, want in ipairs(case[2]) do
+            ok = ok and got[i] and got[i].label == want[1] and got[i].value == want[2]
+        end
+        if not ok then
+            return false, ("CampStats(%q) gives %s %s first"):format(case[1],
+                tostring(got[1] and got[1].label), tostring(got[1] and got[1].value))
+        end
+        checked = checked + 1
+    end
+
     -- A shape we have never seen must still put the stat's NAME on screen, not the whole sentence.
     local odd = CF.CampStats("Some Station: Dodge goes up a bit somehow")
     if #odd ~= 1 or odd[1].label ~= "Dodge" then

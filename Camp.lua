@@ -213,6 +213,9 @@ local STAT_COLOR = {
     crit      = { 0.98, 0.88, 0.45 },
     haste     = { 0.50, 0.90, 0.85 },
     armor     = { 0.75, 0.78, 0.85 },
+    mana      = { 0.45, 0.72, 0.98 },
+    rested    = { 0.70, 0.55, 0.98 },
+    resistances = { 0.75, 0.78, 0.85 },
 }
 
 function CF.StatColor(label)
@@ -233,34 +236,47 @@ end
 local SHORT = {
     ["critical strike"] = "Crit",
     ["critical strike chance"] = "Crit",
-    ["versatility"] = "Vers",
+    ["critical strike chance with all spells and attacks"] = "Crit",
     -- "Melee" is the one everybody means by attack power, so it is the word that can go.
     ["melee attack power"] = "Attack Power",
     ["ranged attack power"] = "Ranged AP",
     ["melee critical strike"] = "Crit",
     ["ranged critical strike"] = "Ranged Crit",
+    ["all attributes"] = "All stats",
+    ["all stats"] = "All stats",
+    ["all resistances"] = "Resistances",
+    ["versatility"] = "Vers",
 }
 
---- The stat and the number out of however the game phrased it. Only those two reach the screen:
---- "Sharpening Wheel: Strength increased by 6." is the same sentence every time apart from the two
---- things you actually want, and the row is narrow. The whole line stays in the buff's own tooltip,
---- so shortening it here loses nothing.
+local function Name(stat)
+    stat = stat:gsub("^%s*and%s+", ""):gsub("%s+[Rr]ating$", "")
+    local short = SHORT[stat:lower()]
+    if short then return short end
+    return (stat:gsub("^%l", string.upper))
+end
+
+--- The stats and numbers out of however the game phrased it. Only those reach the screen: the row is
+--- narrow, and the whole line stays in the buff's own tooltip, so shortening it here loses nothing.
+--- Every station's sentence, from Camp Benefits' own text in the game data: "Strength increased by 6",
+--- "All stats increased by 5%", "Armor increased by 50, all attributes increased by 5, and all
+--- resistances increased by 10" (three rows), "Restores 40 Mana every 5 seconds", "You received a
+--- small amount of rest experience..." (which read as "You", and "All stats ... 5%" as "All").
+--- Returns a list of { label, value }.
 local function StatFrom(body)
-    local stat, amount = body:match("^(.-)%s+increased by%s+([%d%.,]+)$")
-    if not stat then
-        stat, amount = body:match("^[Ii]ncreases?%s+your%s+(.-)%s+by%s+([%d%.,]+)$")
+    if body:lower():find("rest experience", 1, true) then return { { label = "Rested XP" } } end
+    local mana, every = body:match("^Restores%s+([%d%.,]+)%s+Mana every%s+([%d%.]+)%s+sec")
+    if mana then return { { label = "Mana", value = "+" .. mana .. "/" .. every .. "s" } } end
+    local out = {}
+    for stat, amount in (body .. ","):gmatch("%s*(.-)%s+increased by%s+([%d%.]+%%?)%s*,") do
+        out[#out + 1] = { label = Name(stat), value = "+" .. amount }
     end
-    if not stat then
-        amount, stat = body:match("^%+([%d%.,]+)%s+(.+)$")
-    end
-    if not stat or stat == "" then
-        -- A shape we do not know. Take the stat's NAME off the front rather than printing the
-        -- sentence: two leading capitals catch "Attack Power", one catches "Strength increased...".
-        stat = body:match("^(%u%a*%s+%u%a*)") or body:match("^(%S+)") or body
-        amount = nil
-    end
-    stat = stat:gsub("%s+[Rr]ating$", "")
-    return SHORT[stat:lower()] or stat, amount and ("+" .. amount) or nil
+    if #out > 0 then return out end
+    local stat, amount = body:match("^[Ii]ncreases?%s+your%s+(.-)%s+by%s+([%d%.]+%%?)$")
+    if not stat then amount, stat = body:match("^%+([%d%.]+%%?)%s+(.+)$") end
+    if stat and stat ~= "" then return { { label = Name(stat), value = "+" .. amount } } end
+    -- A shape we do not know. Take the stat's NAME off the front rather than printing the
+    -- sentence: two leading capitals catch "Attack Power", one catches "Strength increased...".
+    return { { label = Name(body:match("^(%u%a*%s+%u%a*)") or body:match("^(%S+)") or body) } }
 end
 
 --- "Sharpening Wheel: Strength increased by 6." -> { label = "Strength", value = "+6" }.
@@ -278,8 +294,7 @@ function CF.CampStats(text)
             -- header - so what we want is always after the final one.
             local body = line:match(".*:%s*(.+)$") or line
             body = body:gsub("%s*%.%s*$", "")
-            local label, value = StatFrom(body)
-            out[#out + 1] = { label = label, value = value }
+            for _, st in ipairs(StatFrom(body)) do out[#out + 1] = st end
         end
     end
     return out
