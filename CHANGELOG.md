@@ -1,6 +1,6 @@
 # Campfire
 
-## Unreleased
+## 0.1.0-beta8
 
 
 - **One way in: the settings.** The YippYapp welcome window is gone, and Campfire's page in it with it. Everything that page explained is now at the bottom of Campfire's own settings, under its own headings, next to the switches it talks about. The YippYapp launcher bar is gone too.
