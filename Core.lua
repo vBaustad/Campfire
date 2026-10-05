@@ -669,10 +669,11 @@ SlashCmdList.CAMPFIRE = function(msg)
         -- The camp HUD reads our OWN auras, so when it shows nothing this is the only way to tell
         -- "no camp near" apart from "a camp that gives no aura we can see".
         if CF.CampState then
-            local camp, campStale = CF.CampState()
-            print(("  camp: nearby %s, benefits %s, carrying %s - reading is %s"):format(
+            local camp, campStale, missed = CF.CampState()
+            print(("  camp: nearby %s, benefits %s, carrying %s - reading is %s%s"):format(
                 tostring(camp.nearby), tostring(camp.benefits), tostring(camp.carrying),
-                campStale and "STALE (auras are secret right now)" or "current"))
+                campStale and "STALE (auras are secret right now)" or "current",
+                (missed or 0) > 0 and (", %d aura slot(s) unreadable"):format(missed) or ""))
             for _, b in ipairs(camp.buffs) do
                 print(("    %d %s%s"):format(b.id, tostring(b.name),
                     b.expires and (" - %ds left"):format(b.expires - GetTime()) or ""))

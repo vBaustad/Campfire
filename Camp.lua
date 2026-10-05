@@ -35,6 +35,7 @@ for i, id in ipairs(ORDER) do RANK[id] = i end
 local ICON = "Interface\\AddOns\\Campfire\\Media\\camp"
 local W, ICON_SIZE, PAD = 190, 46, 8
 local LINE_H, BIG_H, STAT_H, ROW_H = 14, 20, 17, 16
+local RETRY_EVERY = 2       -- seconds between attempts while the last reading could not be taken
 
 local hud, statRows, buffRows
 
@@ -140,12 +141,20 @@ end
 local function Scan()
     if AurasBlocked() then return nil end
     local nearby, benefits, settled, buffs = false, false, false, {}
+    local missed = 0
     for i = 1, 60 do
         if not IndexSecret(i) then
             local ok, id, name, icon, duration, expires = pcall(ReadAura, i)
-            if not ok then return nil end
-            if id == nil and name == nil then break end
-            if id == NEARBY then
+            if not ok then
+                -- ONE unreadable index is not a reason to throw the whole reading away. It used to
+                -- be: a single aura the per-index check did not catch made every scan fail, so the
+                -- HUD sat dimmed on its last reading until something unrelated fired an event.
+                -- Skipping it can under-report a camp buff for one pass; refusing to read anything
+                -- under-reports every buff until you leave.
+                missed = missed + 1
+            elseif id == nil and name == nil then
+                break
+            elseif id == NEARBY then
                 nearby = true
             elseif RANK[id] then
                 if id == BENEFITS then benefits = true end
@@ -163,7 +172,7 @@ local function Scan()
     table.sort(buffs, function(l, r) return RANK[l.id] < RANK[r.id] end)
     -- carrying: the camp gave us something that is still running, wherever we have walked to since.
     return { nearby = nearby, benefits = benefits, settled = settled,
-        carrying = #buffs > 0, buffs = buffs }
+        carrying = #buffs > 0, buffs = buffs, missed = missed }
 end
 
 -- The last thing we managed to read, kept across a fight so the HUD does not vanish at the pull.
@@ -172,8 +181,11 @@ local stale = true          -- true until the first successful read, and again w
 
 --- The camp state the HUD draws, plus whether it is what we can see or what we last saw.
 --- Never returns nil: "we could not look" is `stale`, not an empty camp.
+--- Third return: how many aura slots we could not read on the last successful pass. Not the same
+--- thing as `stale` - stale means we could not look at all, this means we looked and some of it
+--- was closed to us. Both used to be the same answer, and the HUD dimmed for either.
 function CF.CampState()
-    return state, stale
+    return state, stale, state.missed or 0
 end
 
 -- ---------------------------------------------------------------------------
@@ -630,8 +642,20 @@ local function Build()
     statRows, buffRows = {}, {}
     -- Nothing fires an event as time passes, so the numbers and the colour draining out of the
     -- fire both come from here - twice a second, and only while the HUD is actually up.
-    local elapsed = 0
+    local elapsed, retry = 0, 0
     hud:SetScript("OnUpdate", function(_, dt)
+        -- A reading we could not take does not fix itself. Nothing fires an event while you stand
+        -- still at a camp, so without this the HUD stays dimmed on its last reading until something
+        -- unrelated happens - which is how it could sit faded with no fight anywhere near.
+        if stale then
+            retry = retry + dt
+            if retry >= RETRY_EVERY then
+                retry = 0
+                CF.RefreshCamp()
+            end
+        else
+            retry = 0
+        end
         elapsed = elapsed + dt
         if elapsed < 0.5 then return end
         elapsed = 0
