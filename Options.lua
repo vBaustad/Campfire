@@ -51,7 +51,8 @@ local HELP = {
 }
 
 local PAGE_WIDTH = 572   -- the YippYapp window's inner width
-local PAGE_HEIGHT = 840  -- the lib scrolls the page when this is taller than the window's room
+local PAGE_HEIGHT = 620  -- the lib scrolls the page when this is taller than the window's room;
+                         -- Refresh grows it again to fit the help text once that is laid out
 
 function CF.RegisterOptions()
     if category then return end
@@ -76,92 +77,104 @@ function CF.RegisterOptions()
     -- Sharing: the one real setting, so it comes first.
     local h1 = Heading(f, "Sharing")
     h1:SetPoint("TOPLEFT", sub, "BOTTOMLEFT", 0, -20)
-    local function Check(anchor, x, y, text, onClick)
+
+    --- A small "(i)" after a label. The explanation lives in its tooltip rather than as a paragraph
+    --- under every switch, which is what made this page a wall of text you had to read past to find
+    --- the thing you came to change.
+    --- Text and not a texture on purpose: a texture path that no longer exists draws as a green
+    --- square, and this is the first page in the family to do this, so there is no house icon to
+    --- borrow yet. If the others want the same, this belongs in LibForever rather than copied.
+    local function Info(after, text)
+        local b = CreateFrame("Button", nil, f)
+        b:SetSize(18, 16)
+        b:SetPoint("LEFT", after, "RIGHT", 5, 0)
+        local fs = b:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        fs:SetPoint("CENTER")
+        fs:SetText("(i)")
+        local function Colour(hot) fs:SetTextColor(hot and 1 or 0.5, hot and 1 or 0.7, hot and 1 or 0.95) end
+        Colour(false)
+        b:SetScript("OnEnter", function(self)
+            Colour(true)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:AddLine(text, 1, 1, 1, true)   -- true: wrap, so these can be whole sentences
+            GameTooltip:Show()
+        end)
+        b:SetScript("OnLeave", function() Colour(false) GameTooltip:Hide() end)
+        return b
+    end
+
+    --- One row per setting: box, label, and the "(i)" that holds what used to be the paragraph.
+    --- `anchor` is the row above, so the rows chain and no caller counts pixels.
+    local function Check(anchor, text, onClick, info, gap)
         local cb = CreateFrame("CheckButton", nil, f, "UICheckButtonTemplate")
         cb:SetSize(26, 26)
-        cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", x, y)
+        cb:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", anchor.isHeading and -4 or 0, gap or -4)
         local l = f:CreateFontString(nil, "ARTWORK", "GameFontHighlight")
         l:SetPoint("LEFT", cb, "RIGHT", 4, 0)
         l:SetText(text)
+        if info then Info(l, info) end
         cb:SetScript("OnClick", function(self) onClick(self:GetChecked() and true or false) end)
         return cb
     end
 
-    local hide = Check(h1, -4, -6, "Hide my position", CF.SetHidden)
-    local hideNote = Note(f, "Off by default. While Campfire is on, your guildies and other Campfire players on your "
-        .. "faction (below) can see where you are. Tick this to share nothing; they stop seeing you at once, and you "
-        .. "still see guildies who share. It's also in the Campfire window.")
-    hideNote:SetPoint("TOPLEFT", hide, "BOTTOMLEFT", 30, -2)
+    local function Section(above, title)
+        local h = Heading(f, title)
+        h:SetPoint("TOPLEFT", above, "BOTTOMLEFT", above.isHeading and 0 or 4, -16)
+        h.isHeading = true
+        return h
+    end
+    h1.isHeading = true
 
-    local open = Check(hideNote, -30, -12, "Also share with other Campfire players on my faction", CF.SetOpenShare)
-    local openNote = Note(f, "Other Campfire players on your faction can see where you are. Only your guild when unticked. "
-        .. "Players outside your guild show up grey.")
-    openNote:SetPoint("TOPLEFT", open, "BOTTOMLEFT", 30, -2)
+    local hide = Check(h1, "Hide my position", CF.SetHidden,
+        "Off by default. While Campfire is on, your guildies and other Campfire players on your "
+        .. "faction can see where you are. Tick this to share nothing: they stop seeing you at once, "
+        .. "and you still see guildies who share. It's also in the Campfire window.")
+    local open = Check(hide, "Also share with other Campfire players on my faction", CF.SetOpenShare,
+        "Other Campfire players on your faction can see where you are, and you see them - they show "
+        .. "up grey in the list. Untick to share with your guild only.")
 
     -- Who is listed.
-    local hList = Heading(f, "List")
-    hList:SetPoint("TOPLEFT", openNote, "BOTTOMLEFT", -26, -20)
-    local allZones = Check(hList, -4, -6, "Show all zones", CF.SetShowAllZones)
-    local zoneNote = Note(f, "Off by default: only players in your zone are listed, and the rest are counted. "
-        .. "It's also in the Campfire window.")
-    zoneNote:SetPoint("TOPLEFT", allZones, "BOTTOMLEFT", 30, -2)
-
-    local mapPins = Check(zoneNote, -30, -12, "Show Campfire players on the map", CF.SetMapPins)
-    local mapNote = Note(f, "A small dot on the world map and the zone map for everyone Campfire can see, in "
-        .. "their class colour. Off by default when GuildMap is installed, since that is what GuildMap does.")
-    mapNote:SetPoint("TOPLEFT", mapPins, "BOTTOMLEFT", 30, -2)
-
-    local mapGuild = Check(mapNote, -30, -12, "Only show guildies on the map", CF.SetMapGuildOnly)
-    local mapGuildNote = Note(f, "On by default. Your guild is small enough to show everywhere, so this also "
-        .. "turns the zone limit below off: you see your guild across the zone map and the continent. Leave "
-        .. "Campfire players outside your guild in, and the zone limit comes back on to keep the map readable.")
-    mapGuildNote:SetPoint("TOPLEFT", mapGuild, "BOTTOMLEFT", 30, -2)
-
-    local mapZone = Check(mapGuildNote, -30, -12, "Map dots only in my zone", CF.SetMapZoneOnly)
-    local mapZoneNote = Note(f, "Dots are drawn on a zone map only, so the continent map stays clean. At most "
-        .. "40 dots are drawn at once, nearest first - a safety net that guild-only rarely reaches.")
-    mapZoneNote:SetPoint("TOPLEFT", mapZone, "BOTTOMLEFT", 30, -2)
+    local hList = Section(open, "List")
+    local allZones = Check(hList, "Show all zones", CF.SetShowAllZones,
+        "Off by default: only players in your zone are listed, and the rest are counted. It's also "
+        .. "in the Campfire window.")
+    local mapPins = Check(allZones, "Show Campfire players on the map", CF.SetMapPins,
+        "A small dot on the world map and the zone map for everyone Campfire can see, in their class "
+        .. "colour. Off by default when GuildMap is installed, since that is what GuildMap does.")
+    local mapGuild = Check(mapPins, "Only show guildies on the map", CF.SetMapGuildOnly,
+        "On by default. Your guild is small enough to show everywhere, so this also turns the zone "
+        .. "limit below off: you see your guild across the zone map and the continent. Leave Campfire "
+        .. "players outside your guild in, and the zone limit comes back on to keep the map readable.")
+    local mapZone = Check(mapGuild, "Map dots only in my zone", CF.SetMapZoneOnly,
+        "Dots are drawn on a zone map only, so the continent map stays clean. At most 40 dots are "
+        .. "drawn at once, nearest first - a safety net that guild-only rarely reaches.")
 
     -- The camp HUD, which has nothing to do with other players: it reads your own auras.
-    local hCamp = Heading(f, "Camps")
-    hCamp:SetPoint("TOPLEFT", mapZoneNote, "BOTTOMLEFT", -26, -20)
-    local camp = Check(hCamp, -4, -6, "Show a campfire icon when a camp is near", CF.SetCampIcon)
-    local campNote = Note(f, "On by default, and only on screen while a camp is within about 100 yards. "
-        .. "The icon is full colour while you have the camp's benefit and grey while you don't. The game "
-        .. "doesn't tell addons where a camp is, only that one is near, so there's no arrow and no distance.")
-    campNote:SetPoint("TOPLEFT", camp, "BOTTOMLEFT", 30, -2)
-
-    local campList = Check(campNote, -30, -12, "List what the camp gives you, with the time left", CF.SetCampList)
-    local campListNote = Note(f, "Under the icon: each buff the camp has given you and how long it has "
-        .. "left. Untick for the icon on its own. Buffs can't be read in combat, so during a fight the "
-        .. "whole thing dims to say it's showing what it last saw.")
-    campListNote:SetPoint("TOPLEFT", campList, "BOTTOMLEFT", 30, -2)
-
-    local campAlways = Check(campListNote, -30, -12, "Keep the campfire icon on screen away from camps",
-        CF.SetCampAlways)
-    local campAlwaysNote = Note(f, "On by default. With nothing going on it's just the grey fire, no "
-        .. "text. Untick and the icon turns up only when a camp is near or its buff is running.")
-    campAlwaysNote:SetPoint("TOPLEFT", campAlways, "BOTTOMLEFT", 30, -2)
-
-    local campLock = Check(campAlwaysNote, -30, -12, "Lock the campfire icon in place", CF.SetCampLocked)
-    local campLockNote = Note(f, "On by default. Untick and the icon appears wherever you are, as a "
-        .. "preview with a blue edge, so you can drag it where you want it. |cffffd100/campfire camp unlock|r "
-        .. "does the same.")
-    campLockNote:SetPoint("TOPLEFT", campLock, "BOTTOMLEFT", 30, -2)
+    local hCamp = Section(mapZone, "Camps")
+    local camp = Check(hCamp, "Show a campfire icon when a camp is near", CF.SetCampIcon,
+        "On by default. The fire keeps its colour down to the time left on the camp's benefit, so it "
+        .. "burns out from the tips as the hour goes. The game doesn't tell addons where a camp is, "
+        .. "only that one is near, so there's no arrow and no distance.")
+    local campList = Check(camp, "List what the camp gives you, with the time left", CF.SetCampList,
+        "Under the icon: what the camp is giving you, read from the buff itself - \"Strength +6\". "
+        .. "Untick for the fire and the timer on their own. Buffs can't be read in combat, so during "
+        .. "a fight the whole thing dims to say it's showing what it last saw.")
+    local campAlways = Check(campList, "Keep the campfire icon on screen away from camps", CF.SetCampAlways,
+        "On by default. With nothing going on it's a grey fire with \"No camp benefit\" under it. "
+        .. "Untick and the icon turns up only when a camp is near or its buff is running.")
+    local campLock = Check(campAlways, "Lock the campfire icon in place", CF.SetCampLocked,
+        "On by default. Untick and the icon appears wherever you are, as a preview with a blue edge, "
+        .. "so you can drag it where you want it. /campfire camp unlock does the same.")
 
     -- Grouping is fixed on now, so the only choice left is whether Campfire is in that row at all.
-    local hMini = Heading(f, "Minimap")
-    hMini:SetPoint("TOPLEFT", campLockNote, "BOTTOMLEFT", -26, -20)
-    local mini = Check(hMini, -4, -6, "Show Campfire in the YippYapp minimap button", function(on)
+    local hMini = Section(campLock, "Minimap")
+    local mini = Check(hMini, "Show Campfire in the YippYapp minimap button", function(on)
         if LIB.SetMinimapButtonShown then LIB.SetMinimapButtonShown("Campfire", on) end
-    end)
-    local miniNote = Note(f, "On by default. YippYapp addons share one minimap button; this is whether "
-        .. "Campfire is one of the icons behind it. Left-click opens Campfire, right-click these settings.")
-    miniNote:SetPoint("TOPLEFT", mini, "BOTTOMLEFT", 30, -2)
+    end, "On by default. YippYapp addons share one minimap button; this is whether Campfire is one "
+        .. "of the icons behind it. Left-click opens Campfire, right-click these settings.")
 
     -- Where to find the window.
-    local h2 = Heading(f, "Commands")
-    h2:SetPoint("TOPLEFT", miniNote, "BOTTOMLEFT", -26, -20)
+    local h2 = Section(mini, "Commands")
     local cmds = Note(f, "|cffffd100/campfire|r opens the window: players with Campfire, nearest first. Click a name to whisper them.\n"
         .. "|cffffd100/campfire hide|r hides your position or shares it again.  |cffffd100/campfire list|r prints the same list in chat.\n"
         .. "|cffffd100/campfire camp|r turns the campfire icon on or off.")
