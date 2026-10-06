@@ -72,6 +72,7 @@ end
 -- its tooltip; the aura itself carries a name, an icon and a timer and nothing else. Read once per
 -- application and kept, because UNIT_AURA fires far more often than a buff changes.
 local statCache = {}
+local STAT_TRIES = 10   -- re-asks for a tooltip that was not ready yet, then stops asking
 
 --- WoW's own markup out of a tooltip line. The pluralisation form "|4minute:minutes;" carries a
 --- COLON, and the rule below uses a colon to recognise a stat - which is exactly how
@@ -141,6 +142,7 @@ end
 local function Scan()
     if AurasBlocked() then return nil end
     local nearby, benefits, settled, buffs = false, false, false, {}
+    local statsPending = false
     local missed = 0
     for i = 1, 60 do
         if not IndexSecret(i) then
@@ -160,19 +162,34 @@ local function Scan()
                 if id == BENEFITS then benefits = true end
                 if WELCOMING[id] then settled = true end
                 local timed = (duration and duration > 0) and expires or nil
-                -- Keyed by the moment this application ends, so a refresh re-reads the tooltip and
-                -- a redraw does not.
-                local key = tostring(id) .. ":" .. tostring(timed)
-                if statCache[key] == nil then statCache[key] = ReadStats(i) or false end
+                -- Kept per buff with the moment this application ends, so a refresh re-reads the
+                -- tooltip and a redraw does not - and one entry per buff, not one per refresh.
+                -- A FAILED read is NOT cached as "this buff has no stats". The tooltip is not
+                -- always ready the first time we ask - least of all on the pass that runs at
+                -- login - and treating that silence as an answer left the buff with no stats for
+                -- its whole hour. A /reload appeared to fix it because it emptied this table.
+                local was = statCache[id]
+                if not was or was.expires ~= timed then
+                    was = { expires = timed, tries = 0 }
+                    statCache[id] = was
+                end
+                if was.stats == nil and was.tries < STAT_TRIES then
+                    was.stats = ReadStats(i)
+                    if was.stats == nil then
+                        was.tries = was.tries + 1
+                        -- Still worth asking again: tell the caller so something comes back round.
+                        if was.tries < STAT_TRIES then statsPending = true end
+                    end
+                end
                 buffs[#buffs + 1] = { id = id, name = name, icon = icon, duration = duration,
-                    index = i, expires = timed, stats = statCache[key] or nil }
+                    index = i, expires = timed, stats = was.stats }
             end
         end
     end
     table.sort(buffs, function(l, r) return RANK[l.id] < RANK[r.id] end)
     -- carrying: the camp gave us something that is still running, wherever we have walked to since.
     return { nearby = nearby, benefits = benefits, settled = settled,
-        carrying = #buffs > 0, buffs = buffs, missed = missed }
+        carrying = #buffs > 0, buffs = buffs, missed = missed, statsPending = statsPending }
 end
 
 -- The last thing we managed to read, kept across a fight so the HUD does not vanish at the pull.
@@ -647,7 +664,9 @@ local function Build()
         -- A reading we could not take does not fix itself. Nothing fires an event while you stand
         -- still at a camp, so without this the HUD stays dimmed on its last reading until something
         -- unrelated happens - which is how it could sit faded with no fight anywhere near.
-        if stale then
+        -- The same goes for a tooltip that was not ready: without something coming back round, the
+        -- buff keeps its timer and shows no stats until you reload.
+        if stale or state.statsPending then
             retry = retry + dt
             if retry >= RETRY_EVERY then
                 retry = 0
