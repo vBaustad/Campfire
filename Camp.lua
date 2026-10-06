@@ -670,7 +670,13 @@ local function Build()
             retry = retry + dt
             if retry >= RETRY_EVERY then
                 retry = 0
-                CF.RefreshCamp()
+                -- But not while the auras cannot be read at ALL. In a fight every one of them is
+                -- secret, which is most of why `stale` is ever set, and a retry there cannot do
+                -- better than the reading we already have - it would just scan and redraw every two
+                -- seconds for the whole fight. PLAYER_REGEN_ENABLED takes a fresh one the moment it
+                -- ends. Asked through AurasBlocked, not InCombatLockdown, so this and the scan
+                -- cannot come to different views of whether a reading is possible.
+                if not AurasBlocked() then CF.RefreshCamp() end
             end
         else
             retry = 0
