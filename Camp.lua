@@ -568,11 +568,9 @@ local function OnEnter(self)
         GameTooltip:AddLine("You don't have " .. SpellName(BENEFITS, "Camp Benefits") .. ".",
             1, 0.6, 0.2, true)
     end
-    -- What the client does NOT give us, said once here rather than guessed at in the HUD. Only one
-    -- aura means "a camp is near", and it is not on you at every camp - so silence is not proof
-    -- that there is no camp, and the HUD never pretends otherwise.
-    GameTooltip:AddLine("The game doesn't tell addons where a camp is, only that one is near.",
-        0.6, 0.6, 0.6, true)
+    -- No line here about the client not telling us where a camp is. That is a fact about how this
+    -- is built, not about your character, and it was on screen every single hover. It still lives
+    -- on the settings page, where someone wondering why there is no arrow will go looking.
     if stale then
         GameTooltip:AddLine("As of the pull - buffs can't be read in combat. Updates when combat ends.",
             0.6, 0.6, 0.6, true)
