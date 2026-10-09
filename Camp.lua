@@ -515,9 +515,16 @@ local function Draw()
     -- you cannot read is worse than one that admits its numbers are a few seconds old.
     hud:SetAlpha((stale and not unlocked) and 0.75 or 1)
     hud.handle:SetShown(unlocked)
-    -- Grabbable anywhere while you are placing it; afterwards only the fire itself takes the mouse,
-    -- so the frame's width - which the text needs - stops sitting on top of whatever is behind it.
-    hud:EnableMouse(unlocked)
+    -- The frame is as wide as the text needs, and that width must not take the mouse - it reaches
+    -- well past the fire and would sit over whatever is behind it. Shrinking the HIT RECT does what
+    -- a child frame would and is not a frame: only the icon's own rectangle answers. Unlocked, the
+    -- whole thing answers again, because then you are placing it and want to grab it anywhere.
+    if unlocked then
+        hud:SetHitRectInsets(0, 0, 0, 0)
+    else
+        local side = (W - ICON_SIZE) / 2
+        hud:SetHitRectInsets(side, side, 2, math.max(0, (y + PAD) - (ICON_SIZE + 2)))
+    end
     hud:Show()
 end
 
@@ -587,8 +594,7 @@ local function Build()
     hud:SetFrameStrata("MEDIUM")
     hud:SetClampedToScreen(true)
     hud:SetMovable(true)
-    -- EnableMouse is NOT set here: Draw turns it on only while unlocked. Locked, the frame is a
-    -- transparent rectangle the size of the text, and it has no business catching hovers.
+    hud:EnableMouse(true)
     hud:SetScript("OnEnter", OnEnter)
     hud:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
@@ -641,12 +647,8 @@ local function Build()
     Edge("TOPRIGHT", "BOTTOMRIGHT", 2)
     hud.handle:Hide()
 
-    -- The mouse belongs to a patch the size of the fire, not to the whole frame. The frame has to
-    -- be wide enough for "Camp Benefits missing" and tall enough for the stats under it, and ALL of
-    -- that was taking the mouse: an invisible rectangle sitting over the quest tracker, catching
-    -- hovers meant for whatever was behind it.
-    -- While unlocked the whole frame takes the mouse again, because then you are deliberately
-    -- placing it and want to grab it anywhere; Draw turns that on and off.
+    -- Draw shrinks the hit rect to the fire, so the frame's width stops catching hovers meant
+    -- for whatever is behind it.
     -- No secure children here, so unlike BuffWarden's bar this one can be dragged in combat too.
     local function StartDrag()
         if CF.db.campLocked then return end
@@ -656,15 +658,6 @@ local function Build()
         hud:StopMovingOrSizing()
         SavePosition()
     end
-    local function HideTip() GameTooltip:Hide() end
-
-    hud.hit = CreateFrame("Button", nil, hud)
-    hud.hit:SetAllPoints(hud.icon)
-    hud.hit:RegisterForDrag("LeftButton")
-    hud.hit:SetScript("OnEnter", OnEnter)
-    hud.hit:SetScript("OnLeave", HideTip)
-    hud.hit:SetScript("OnDragStart", StartDrag)
-    hud.hit:SetScript("OnDragStop", StopDrag)
 
     hud:RegisterForDrag("LeftButton")
     hud:SetScript("OnDragStart", StartDrag)
