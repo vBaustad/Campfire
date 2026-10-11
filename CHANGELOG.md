@@ -1,6 +1,6 @@
 # Campfire
 
-## Unreleased
+## 0.1.0-beta9
 
 - **A campfire that tells you where you stand with camps.** With nothing going on it's a grey fire with "No camp benefit" under it. Walk into range of a camp and it lights up - "Campfire nearby". Settle in at one and it says so while the buff comes. Once you have the benefit it stops talking altogether: the flames keep their colour only down to the time you have left, so the fire burns out from the tips as the hour goes, with the time under it and what you're getting under that - "Strength +6", coloured by stat and read from the buff itself.
 - **Every camp station reads right.** The tent says "Rested XP" instead of "You", the fish bowl "All stats +5%" instead of "All", the lute gives three rows (armor, all stats, resistances), the mana well "Mana +40/5s" and the camp chair "Crit +1%".
